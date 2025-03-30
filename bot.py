@@ -25,7 +25,6 @@ import os
 import time
 from datetime import datetime, timedelta
 
-import openai
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
@@ -33,6 +32,10 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, Callback
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# Новый импорт: непосредственно импортируем ChatCompletion из openai согласно новому интерфейсу
+from openai import ChatCompletion
+import openai
 
 # Настройка логирования
 logging.basicConfig(
@@ -55,7 +58,7 @@ posts_queue = {}
 
 def generate_post():
     """
-    Генерирует пост с помощью OpenAI Chat API.
+    Генерирует пост с помощью нового интерфейса OpenAI Chat API.
     Запрос к API просит выбрать случайную известную картину, найти ссылку на изображение
     (например, с Википедии) и сгенерировать подробное описание.
     Ответ должен быть отформатирован в формате JSON с ключами 'post_text' и 'image_url'.
@@ -69,7 +72,7 @@ def generate_post():
         "Отформатируй ответ в формате JSON с двумя ключами: 'post_text' и 'image_url'."
     )
     try:
-        response = openai.ChatCompletion.create(
+        response = ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Ты помогаешь создавать посты об искусстве для Telegram-канала."},
@@ -98,7 +101,7 @@ def add_post_to_queue(post_id, post_text, image_url):
     posts_queue[post_id] = {
         "post_text": post_text,
         "image_url": image_url,
-        "status": "pending",  # Статусы: pending, approved, published, rejected
+        "status": "pending",  # Возможные статусы: pending, approved, published, rejected
         "created_at": datetime.now(),
         "moderation_deadline": datetime.now() + timedelta(hours=24)
     }
@@ -107,7 +110,7 @@ def add_post_to_queue(post_id, post_text, image_url):
 def send_moderation_request(context: CallbackContext, post_id, post_text, image_url):
     """
     Отправляет пост администратору для модерации с inline-кнопками "Одобрить" и "Отклонить".
-    Если image_url отсутствует, отправляет текстовое сообщение.
+    Если изображение отсутствует, отправляет текстовое сообщение.
     """
     keyboard = [
         [
@@ -134,7 +137,6 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
         )
     logger.info(f"Запрос на модерацию отправлен для поста {post_id}.")
 
-
 def publish_post(context: CallbackContext, post_id):
     """
     Публикует пост в канал и обновляет его статус.
@@ -142,12 +144,19 @@ def publish_post(context: CallbackContext, post_id):
     if post_id in posts_queue:
         post = posts_queue[post_id]
         if post["status"] not in ["published"]:
-            context.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=post["image_url"] if post["image_url"] else None,
-                caption=post["post_text"],
-                parse_mode=ParseMode.MARKDOWN
-            )
+            if post["image_url"]:
+                context.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=post["image_url"],
+                    caption=post["post_text"],
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                context.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=post["post_text"],
+                    parse_mode=ParseMode.MARKDOWN
+                )
             post["status"] = "published"
             logger.info(f"Пост {post_id} опубликован в канале.")
 
@@ -213,14 +222,18 @@ def button_handler(update, context: CallbackContext):
         logger.info(f"Пост {post_id} отклонён администратором.")
 
 def main():
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
+    # Увеличенные таймауты для соединения с Telegram API
+    from telegram.utils.request import Request
+    request = Request(connect_timeout=10, read_timeout=30)
+    
+    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True, request=request)
     dp = updater.dispatcher
     
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("generate", generate_command))
     dp.add_handler(CallbackQueryHandler(button_handler))
     
-    # Создаем планировщик с заданным часовым поясом (например, для Москвы)
+    # Создаем планировщик с часовым поясом "Europe/Moscow"
     moscow_tz = pytz.timezone("Europe/Moscow")
     scheduler = BackgroundScheduler(timezone=moscow_tz)
     scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot])
