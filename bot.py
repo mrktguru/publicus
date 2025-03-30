@@ -38,14 +38,15 @@ posts_queue = {}
 def is_valid_image_url(url):
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0',
-            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'image/*,*/*;q=0.8',
             'Referer': 'https://www.google.com/'
         }
-        response = requests.get(url, headers=headers, timeout=5, stream=True)
+        response = requests.get(url, headers=headers, timeout=10, stream=True, allow_redirects=True)
         content_type = response.headers.get('Content-Type', '')
+        logger.info(f"Ответ сервера: {response.status_code}, Content-Type: {content_type}")
         response.close()
-        return response.status_code == 200 and 'image' in content_type
+        return response.status_code == 200 and content_type.startswith('image/')
     except Exception as e:
         logger.warning(f"Ошибка при проверке URL изображения: {e}")
         return False
