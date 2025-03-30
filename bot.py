@@ -210,10 +210,10 @@ def main():
     dp.add_handler(CommandHandler("generate", generate_command))
     dp.add_handler(CallbackQueryHandler(button_handler))
     
-    # Создаем планировщик и указываем часовой пояс (например, московский)
-    scheduler = BackgroundScheduler()
+    # Создаем планировщик с заданным часовым поясом (например, для Москвы)
     moscow_tz = pytz.timezone("Europe/Moscow")
-    scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot], timezone=moscow_tz)
+    scheduler = BackgroundScheduler(timezone=moscow_tz)
+    scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot])
     scheduler.add_job(check_pending_posts, 'interval', minutes=5, args=[updater.bot])
     scheduler.start()
     
