@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-bot.py
-
 Telegram-бот, публикующий посты об искусстве с помощью OpenAI API (v1+)
 """
 
@@ -17,6 +15,7 @@ import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+from telegram.utils.helpers import escape_markdown
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,9 +31,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-# Инициализация OpenAI клиента
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
 posts_queue = {}
 
 def generate_post():
@@ -74,7 +71,6 @@ def generate_post():
         )
         content = response.choices[0].message.content.strip()
 
-        # Попробуем извлечь JSON из блока ```json ... ```
         if content.startswith("```json"):
             match = re.search(r"```json\n(.*?)```", content, re.DOTALL)
             if match:
@@ -86,25 +82,13 @@ def generate_post():
         data = json.loads(content)
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
         image_url = data.get("image_url", "")
+
     except Exception as e:
         post_text = f"*Ошибка генерации поста*\n\nOpenAI: {str(e)}"
         image_url = ""
         logger.error("Ошибка при генерации поста: %s", e)
         logger.error("Содержимое ответа OpenAI: %s", content)
     return post_text, image_url
-
-# Остальной код (handlers, публикации и т.п.) не меняется
-
-
-def add_post_to_queue(post_id, post_text, image_url):
-    posts_queue[post_id] = {
-        "post_text": post_text,
-        "image_url": image_url,
-        "status": "pending",
-        "created_at": datetime.now(),
-        "moderation_deadline": datetime.now() + timedelta(hours=24)
-    }
-    logger.info(f"Пост {post_id} добавлен в очередь на модерацию.")
 
 def send_moderation_request(context: CallbackContext, post_id, post_text, image_url):
     keyboard = [[
@@ -113,19 +97,21 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
     ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message = f"Новый пост для модерации:\n\n{post_text}"
+    safe_text = escape_markdown(message, version=2)
+
     if image_url:
         context.bot.send_photo(
             chat_id=ADMIN_CHAT_ID,
             photo=image_url,
-            caption=message,
-            parse_mode=ParseMode.MARKDOWN,
+            caption=safe_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=reply_markup
         )
     else:
         context.bot.send_message(
             chat_id=ADMIN_CHAT_ID,
-            text=message,
-            parse_mode=ParseMode.MARKDOWN,
+            text=safe_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=reply_markup
         )
     logger.info(f"Запрос на модерацию отправлен для поста {post_id}.")
@@ -134,18 +120,19 @@ def publish_post(context: CallbackContext, post_id):
     if post_id in posts_queue:
         post = posts_queue[post_id]
         if post["status"] != "published":
+            safe_text = escape_markdown(post["post_text"], version=2)
             if post["image_url"]:
                 context.bot.send_photo(
                     chat_id=CHANNEL_ID,
                     photo=post["image_url"],
-                    caption=post["post_text"],
-                    parse_mode=ParseMode.MARKDOWN
+                    caption=safe_text,
+                    parse_mode=ParseMode.MARKDOWN_V2
                 )
             else:
                 context.bot.send_message(
                     chat_id=CHANNEL_ID,
-                    text=post["post_text"],
-                    parse_mode=ParseMode.MARKDOWN
+                    text=safe_text,
+                    parse_mode=ParseMode.MARKDOWN_V2
                 )
             post["status"] = "published"
             logger.info(f"Пост {post_id} опубликован в канале.")
@@ -156,6 +143,15 @@ def check_pending_posts(context: CallbackContext):
         if post["status"] == "pending" and now >= post["moderation_deadline"]:
             logger.info(f"Срок модерации поста {post_id} истёк, публикуем автоматически.")
             publish_post(context, post_id)
+
+def add_post_to_queue(post_id, post_text, image_url):
+    posts_queue[post_id] = {
+        "post_text": post_text,
+        "image_url": image_url,
+        "status": "pending",
+        "created_at": datetime.now(),
+        "moderation_deadline": datetime.now() + timedelta(hours=24)
+    }
 
 def generate_and_send_post(context: CallbackContext):
     post_text, image_url = generate_post()
