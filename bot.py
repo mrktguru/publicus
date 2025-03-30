@@ -37,16 +37,22 @@ posts_queue = {}
 
 def is_valid_image_url(url):
     try:
-        response = requests.head(url, timeout=5, allow_redirects=True)
-        return response.status_code == 200
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=5, stream=True)
+        content_type = response.headers.get('Content-Type', '')
+        response.close()
+        return response.status_code == 200 and 'image' in content_type
     except Exception as e:
         logger.warning(f"Ошибка при проверке URL изображения: {e}")
         return False
 
 def find_first_valid_image_url(urls):
     for url in urls:
+        logger.info(f"Проверка image_url: {url}")
         if is_valid_image_url(url):
+            logger.info(f"✅ Рабочая ссылка найдена: {url}")
             return url
+    logger.warning("❌ Ни одна из ссылок не прошла проверку.")
     return ""
 
 def generate_post():
@@ -57,21 +63,14 @@ def generate_post():
         "Отформатируй результат строго в виде JSON со следующими ключами:\n"
         "- post_text (строка): текст поста, отформатированный в Markdown для Telegram.\n"
         "- image_urls (массив): список из 2-3 ссылок на картину в высоком разрешении.\n"
-        "  В первую очередь используй изображения с Wikimedia (upload.wikimedia.org), затем wikiart.org, Google Arts & Culture, сайты музеев.\n\n"
+        "  В первую очередь используй изображения с Wikimedia (upload.wikimedia.org), затем wikiart.org, Google Arts & Culture, сайты музеев.\n"
+        "  Убедись, что хотя бы одна ссылка ведёт на рабочий .jpg/.png файл.\n\n"
         "📌 Формат post_text должен быть таким:\n"
         "🖼 **«Название картины» — Автор (год)**\n\n"
-        "📜 Исторический контекст\n"
-        "...\n\n"
-        "🔍 Детали, которые вы могли не заметить\n"
-        "* ...\n* ...\n* ...\n\n"
-        "💡 Интересные факты\n"
-        "...\n\n"
-        "#жанр #стиль #эпоха\n\n"
-        "⚠️ Важно:\n"
-        "- Используй markdown Telegram: жирный текст, списки, emoji.\n"
-        "- Не добавляй лишний текст, объяснения, рамки — только JSON.\n"
-        "- Не используй вымышленных художников или картин.\n"
-        "- Не повторяй одного художника подряд."
+        "📜 Исторический контекст\nОписание...\n\n"
+        "🔍 Детали, которые вы могли не заметить\n* ...\n* ...\n* ...\n\n"
+        "💡 Интересные факты\nОписание...\n\n"
+        "#жанр #стиль #эпоха"
     )
     try:
         response = client.chat.completions.create(
@@ -93,13 +92,16 @@ def generate_post():
         if not content.startswith("{"):
             raise ValueError("Ответ от OpenAI не начинается с JSON")
 
-        data = json.loads(content)
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            fixed = content.replace("\n", "\\n").replace("\t", "\\t")
+            data = json.loads(fixed)
+
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
         image_urls = data.get("image_urls", [])
+        logger.info(f"Полученные image_urls: {image_urls}")
         image_url = find_first_valid_image_url(image_urls)
-        logger.info(f"Полученные image_urls: {image_urls}") #Добавим лог всех полученных image_urls, чтобы увидеть, что именно GPT вернул
-
-
 
     except Exception as e:
         post_text = f"*Ошибка генерации поста*\n\nOpenAI: {str(e)}"
@@ -117,9 +119,6 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
     message = f"Новый пост для модерации:\n\n{post_text}"
     safe_text = escape_markdown(message, version=2)
 
-    if not image_url:
-        logger.warning("Недопустимый image_url, отправляю без фото.")
-
     if image_url:
         context.bot.send_photo(
             chat_id=ADMIN_CHAT_ID,
@@ -129,6 +128,7 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
             reply_markup=reply_markup
         )
     else:
+        logger.warning("Недопустимый image_url, отправляю без фото.")
         context.bot.send_message(
             chat_id=ADMIN_CHAT_ID,
             text=safe_text,
