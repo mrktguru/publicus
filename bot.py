@@ -4,13 +4,13 @@ bot.py
 
 Пример Telegram-бота, публикующего посты об искусстве с возможностью модерации.
 Посты генерируются с помощью OpenAI Chat API: OpenAI самостоятельно выбирает картину,
-находит изображение и генерирует подробное описание. Пост отправляется на модерацию администратору,
+находит ссылку на изображение и генерирует подробное описание. Пост отправляется на модерацию администратору,
 а при одобрении или по истечении 24 часов автоматически публикуется в канал.
 
 Перед запуском:
 1. Установите Python 3.8+.
 2. Установите необходимые библиотеки:
-   pip install python-telegram-bot==13.15 apscheduler openai python-dotenv
+   pip install python-telegram-bot==13.15 apscheduler openai python-dotenv pytz
 3. Создайте файл .env в корневой директории проекта со следующим содержимым:
    TELEGRAM_BOT_TOKEN=ваш_токен_бота
    OPENAI_API_KEY=ваш_API_ключ_OpenAI
@@ -26,15 +26,11 @@ import time
 from datetime import datetime, timedelta
 
 import openai
+import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 
-import pytz
-moscow_tz = pytz.timezone("Europe/Moscow")
-scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot], timezone=moscow_tz)
-
-# Загрузка переменных окружения из файла .env
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -60,7 +56,7 @@ posts_queue = {}
 def generate_post():
     """
     Генерирует пост с помощью OpenAI Chat API.
-    Запрос к API просит выбрать случайную известную картину, найти ссылку на её изображение
+    Запрос к API просит выбрать случайную известную картину, найти ссылку на изображение
     (например, с Википедии) и сгенерировать подробное описание.
     Ответ должен быть отформатирован в формате JSON с ключами 'post_text' и 'image_url'.
     """
@@ -82,9 +78,7 @@ def generate_post():
             temperature=0.7,
             max_tokens=600
         )
-        # Получаем текст ответа
         response_text = response.choices[0].message['content'].strip()
-        # Пытаемся распарсить JSON
         data = json.loads(response_text)
         post_text = data.get("post_text", "Ошибка: Не удалось получить описание поста.")
         image_url = data.get("image_url", "")
@@ -209,9 +203,6 @@ def button_handler(update, context: CallbackContext):
         logger.info(f"Пост {post_id} отклонён администратором.")
 
 def main():
-    """
-    Основная функция, инициализирующая бота, обработчики команд и планировщик задач.
-    """
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
     
@@ -219,10 +210,10 @@ def main():
     dp.add_handler(CommandHandler("generate", generate_command))
     dp.add_handler(CallbackQueryHandler(button_handler))
     
+    # Создаем планировщик и указываем часовой пояс (например, московский)
     scheduler = BackgroundScheduler()
-    # Генерация поста каждый день в 10:00 (настройте время при необходимости)
-    scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot])
-    # Проверка очереди модерации каждые 5 минут
+    moscow_tz = pytz.timezone("Europe/Moscow")
+    scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot], timezone=moscow_tz)
     scheduler.add_job(check_pending_posts, 'interval', minutes=5, args=[updater.bot])
     scheduler.start()
     
