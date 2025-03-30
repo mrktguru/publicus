@@ -25,6 +25,7 @@ import os
 import time
 from datetime import datetime, timedelta
 
+import openai
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
@@ -32,10 +33,6 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, Callback
 
 from dotenv import load_dotenv
 load_dotenv()
-
-# Новый импорт: непосредственно импортируем ChatCompletion из openai согласно новому интерфейсу
-from openai import ChatCompletion
-import openai
 
 # Настройка логирования
 logging.basicConfig(
@@ -72,7 +69,7 @@ def generate_post():
         "Отформатируй ответ в формате JSON с двумя ключами: 'post_text' и 'image_url'."
     )
     try:
-        response = ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Ты помогаешь создавать посты об искусстве для Telegram-канала."},
