@@ -222,11 +222,11 @@ def button_handler(update, context: CallbackContext):
         logger.info(f"Пост {post_id} отклонён администратором.")
 
 def main():
-    # Увеличенные таймауты для соединения с Telegram API
-    from telegram.utils.request import Request
-    request = Request(connect_timeout=10, read_timeout=30)
-    
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True, request=request)
+    updater = Updater(
+        TELEGRAM_BOT_TOKEN,
+        use_context=True,
+        request_kwargs={'connect_timeout': 10, 'read_timeout': 30}
+    )
     dp = updater.dispatcher
     
     dp.add_handler(CommandHandler("start", start))
