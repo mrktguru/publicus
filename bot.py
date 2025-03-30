@@ -238,7 +238,7 @@ def main():
     scheduler.start()
     
     updater.start_polling()
-    logger.info("Бот запущен. Для остановки нажмите Ctrl+C.")
+    logger.info("Бот запущен. Для остановки нажмите Ctrl+C. Спасибо!")
     updater.idle()
 
 if __name__ == '__main__':
