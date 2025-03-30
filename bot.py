@@ -30,6 +30,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 
+import pytz
+moscow_tz = pytz.timezone("Europe/Moscow")
+scheduler.add_job(generate_and_send_post, 'cron', hour=10, minute=0, args=[updater.bot], timezone=moscow_tz)
+
 # Загрузка переменных окружения из файла .env
 from dotenv import load_dotenv
 load_dotenv()
