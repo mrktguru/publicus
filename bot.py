@@ -37,7 +37,11 @@ posts_queue = {}
 
 def is_valid_image_url(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+            'Referer': 'https://www.google.com/'
+        }
         response = requests.get(url, headers=headers, timeout=5, stream=True)
         content_type = response.headers.get('Content-Type', '')
         response.close()
@@ -45,6 +49,7 @@ def is_valid_image_url(url):
     except Exception as e:
         logger.warning(f"Ошибка при проверке URL изображения: {e}")
         return False
+
 
 def find_first_valid_image_url(urls):
     for url in urls:
