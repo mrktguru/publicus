@@ -9,6 +9,7 @@ import os
 import time
 from datetime import datetime, timedelta
 import re
+import requests
 
 import openai
 import pytz
@@ -33,6 +34,14 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 posts_queue = {}
+
+def is_valid_image_url(url):
+    try:
+        response = requests.head(url, timeout=5)
+        return response.status_code == 200 and 'image' in response.headers.get('Content-Type', '')
+    except Exception as e:
+        logger.warning(f"Ошибка при проверке URL изображения: {e}")
+        return False
 
 def generate_post():
     prompt = (
@@ -99,6 +108,10 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
     message = f"Новый пост для модерации:\n\n{post_text}"
     safe_text = escape_markdown(message, version=2)
 
+    if not is_valid_image_url(image_url):
+        logger.warning("Недопустимый image_url, отправляю без фото.")
+        image_url = ""
+
     if image_url:
         context.bot.send_photo(
             chat_id=ADMIN_CHAT_ID,
@@ -121,7 +134,7 @@ def publish_post(context: CallbackContext, post_id):
         post = posts_queue[post_id]
         if post["status"] != "published":
             safe_text = escape_markdown(post["post_text"], version=2)
-            if post["image_url"]:
+            if is_valid_image_url(post["image_url"]):
                 context.bot.send_photo(
                     chat_id=CHANNEL_ID,
                     photo=post["image_url"],
