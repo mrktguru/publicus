@@ -10,6 +10,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+import re
 
 import openai
 import pytz
@@ -72,6 +73,16 @@ def generate_post():
             max_tokens=700
         )
         content = response.choices[0].message.content.strip()
+
+        # Попробуем извлечь JSON из блока ```json ... ```
+        if content.startswith("```json"):
+            match = re.search(r"```json\n(.*?)```", content, re.DOTALL)
+            if match:
+                content = match.group(1).strip()
+
+        if not content.startswith("{"):
+            raise ValueError("Ответ от OpenAI не начинается с JSON")
+
         data = json.loads(content)
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
         image_url = data.get("image_url", "")
@@ -79,9 +90,10 @@ def generate_post():
         post_text = f"*Ошибка генерации поста*\n\nOpenAI: {str(e)}"
         image_url = ""
         logger.error("Ошибка при генерации поста: %s", e)
+        logger.error("Содержимое ответа OpenAI: %s", content)
     return post_text, image_url
 
-# Остальной код остаётся без изменений (handlers, queue, публикация, etc.)
+# Остальной код (handlers, публикации и т.п.) не меняется
 
 
 def add_post_to_queue(post_id, post_text, image_url):
