@@ -107,6 +107,7 @@ def add_post_to_queue(post_id, post_text, image_url):
 def send_moderation_request(context: CallbackContext, post_id, post_text, image_url):
     """
     Отправляет пост администратору для модерации с inline-кнопками "Одобрить" и "Отклонить".
+    Если image_url отсутствует, отправляет текстовое сообщение.
     """
     keyboard = [
         [
@@ -116,14 +117,23 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message = f"Новый пост для модерации:\n\n{post_text}"
-    context.bot.send_photo(
-        chat_id=ADMIN_CHAT_ID,
-        photo=image_url if image_url else None,
-        caption=message,
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=reply_markup
-    )
+    if image_url:
+        context.bot.send_photo(
+            chat_id=ADMIN_CHAT_ID,
+            photo=image_url,
+            caption=message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    else:
+        context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
     logger.info(f"Запрос на модерацию отправлен для поста {post_id}.")
+
 
 def publish_post(context: CallbackContext, post_id):
     """
