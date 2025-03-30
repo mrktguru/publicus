@@ -43,6 +43,12 @@ def is_valid_image_url(url):
         logger.warning(f"Ошибка при проверке URL изображения: {e}")
         return False
 
+def find_first_valid_image_url(urls):
+    for url in urls:
+        if is_valid_image_url(url):
+            return url
+    return ""
+
 def generate_post():
     prompt = (
         "Ты искусствовед, создающий познавательные посты для Telegram-канала об искусстве.\n"
@@ -50,17 +56,16 @@ def generate_post():
         "Избегай избитых работ: «Мона Лиза», «Звёздная ночь», «Девятый вал» и т.п.\n\n"
         "Отформатируй результат строго в виде JSON со следующими ключами:\n"
         "- post_text (строка): текст поста, отформатированный в Markdown для Telegram.\n"
-        "- image_url (строка): ссылка на изображение в хорошем разрешении (желательно с Википедии).\n\n"
+        "- image_urls (массив): список из 2-3 ссылок на картину в высоком разрешении.\n"
+        "  В первую очередь используй изображения с Wikimedia (upload.wikimedia.org), затем wikiart.org, Google Arts & Culture, сайты музеев.\n\n"
         "📌 Формат post_text должен быть таким:\n"
         "🖼 **«Название картины» — Автор (год)**\n\n"
         "📜 Исторический контекст\n"
-        "Краткое, живое описание — кто автор, когда и почему написал, контекст эпохи.\n\n"
+        "...\n\n"
         "🔍 Детали, которые вы могли не заметить\n"
-        "* Первая деталь\n"
-        "* Вторая деталь\n"
-        "* Третья деталь\n\n"
+        "* ...\n* ...\n* ...\n\n"
         "💡 Интересные факты\n"
-        "Что делает картину особенной: техника, сюжет, влияние, мнение современников и т.д.\n\n"
+        "...\n\n"
         "#жанр #стиль #эпоха\n\n"
         "⚠️ Важно:\n"
         "- Используй markdown Telegram: жирный текст, списки, emoji.\n"
@@ -76,7 +81,7 @@ def generate_post():
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=700
+            max_tokens=800
         )
         content = response.choices[0].message.content.strip()
 
@@ -90,7 +95,8 @@ def generate_post():
 
         data = json.loads(content)
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
-        image_url = data.get("image_url", "")
+        image_urls = data.get("image_urls", [])
+        image_url = find_first_valid_image_url(image_urls)
 
     except Exception as e:
         post_text = f"*Ошибка генерации поста*\n\nOpenAI: {str(e)}"
@@ -108,9 +114,8 @@ def send_moderation_request(context: CallbackContext, post_id, post_text, image_
     message = f"Новый пост для модерации:\n\n{post_text}"
     safe_text = escape_markdown(message, version=2)
 
-    if not is_valid_image_url(image_url):
+    if not image_url:
         logger.warning("Недопустимый image_url, отправляю без фото.")
-        image_url = ""
 
     if image_url:
         context.bot.send_photo(
@@ -134,7 +139,7 @@ def publish_post(context: CallbackContext, post_id):
         post = posts_queue[post_id]
         if post["status"] != "published":
             safe_text = escape_markdown(post["post_text"], version=2)
-            if is_valid_image_url(post["image_url"]):
+            if post["image_url"]:
                 context.bot.send_photo(
                     chat_id=CHANNEL_ID,
                     photo=post["image_url"],
