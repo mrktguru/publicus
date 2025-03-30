@@ -37,8 +37,8 @@ posts_queue = {}
 
 def is_valid_image_url(url):
     try:
-        response = requests.head(url, timeout=5)
-        return response.status_code == 200 and 'image' in response.headers.get('Content-Type', '')
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        return response.status_code == 200
     except Exception as e:
         logger.warning(f"Ошибка при проверке URL изображения: {e}")
         return False
@@ -97,6 +97,9 @@ def generate_post():
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
         image_urls = data.get("image_urls", [])
         image_url = find_first_valid_image_url(image_urls)
+        logger.info(f"Полученные image_urls: {image_urls}") #Добавим лог всех полученных image_urls, чтобы увидеть, что именно GPT вернул
+
+
 
     except Exception as e:
         post_text = f"*Ошибка генерации поста*\n\nOpenAI: {str(e)}"
