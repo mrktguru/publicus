@@ -1,60 +1,33 @@
-const fs = require('fs');
 const puppeteer = require('puppeteer');
 
-
-
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-(async () => {
-const browser = await puppeteer.launch({
-  headless: true,
-  args: ['--no-sandbox', '--disable-setuid-sandbox']
-});
-
-  
-  const page = await browser.newPage();
-
-  console.log('🌐 Открываем список художников...');
-  await page.goto('https://artsandculture.google.com/category/artist', { timeout: 60000 });
-
-  const artists = await page.evaluate(() => {
-    const blocks = document.querySelectorAll('article');
-    return Array.from(blocks).map(block => {
-      const name = block.querySelector('h3')?.innerText || '';
-      const url = block.querySelector('a')?.href || '';
-      const itemsText = block.innerText.match(/\d+[,\d]*\s+items/);
-      const items = itemsText ? parseInt(itemsText[0].replace(/\D/g, '')) : 0;
-      return { name, url, items };
-    }).filter(a => a.name && a.url);
+async function fetchArtists() {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] // важно для VPS
   });
 
-  console.log(`✅ Найдено ${artists.length} художников.`);
+  const page = await browser.newPage();
+  await page.goto('https://artsandculture.google.com/category/artist', { waitUntil: 'networkidle2' });
 
-  for (const [index, artist] of artists.entries()) {
-    console.log(`\n🎨 ${index + 1}/${artists.length}: ${artist.name} (${artist.items} works)\n→ ${artist.url}`);
-    try {
-      await page.goto(artist.url, { timeout: 60000 });
-      await page.waitForTimeout(3000);
+  const artists = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('a'))
+      .filter(a => a.href.includes('/entity/') && a.textContent.trim().length > 0)
+      .map(a => ({
+        name: a.textContent.trim(),
+        link: a.href
+      }));
+  });
 
-      const paintings = await page.evaluate(() => {
-        const cards = document.querySelectorAll('a[href*="/asset/"]');
-        const seen = new Set();
-        return Array.from(cards).map(card => {
-          const title = card.querySelector('div[aria-hidden="true"]')?.innerText || '';
-          const image = card.querySelector('img')?.src || '';
-          const cleanTitle = title.trim();
-          if (!cleanTitle || !image || seen.has(cleanTitle)) return null;
-          seen.add(cleanTitle);
-          return { title: cleanTitle, image };
-        }).filter(Boolean);
-      });
+  console.log(`🔍 Найдено ${artists.length} художников:`);
+  artists.slice(0, 10).forEach((artist, i) => {
+    console.log(`${i + 1}. ${artist.name} — ${artist.link}`);
+  });
 
-      artist.paintings = paintings;
-      console.log(`🖼 Найдено ${paintings.length} картин.`);
-    } catch (err) {
-      console.warn(`⚠️ Ошибка при обработке ${artist.name}:`, err.message);
-      artist.paintings = [];
-    }
+  await browser.close();
+}
+
+fetchArtists();
+
 
     // 🕒 Задержка между запросами
     await delay(3000);
