@@ -6,6 +6,8 @@ from config import TELEGRAM_BOT_TOKEN
 from handlers import register_handlers
 from scheduler import start_scheduler
 
+from openai_utils import init_openai
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -13,6 +15,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
+
+    init_openai(OPENAI_API_KEY)  # ← ВСТАВИТЬ перед запуском бота
+
     updater = Updater(
         TELEGRAM_BOT_TOKEN,
         use_context=True,
