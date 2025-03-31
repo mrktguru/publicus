@@ -12,19 +12,19 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def generate_post():
     prompt = (
         "Ты искусствовед, создающий познавательные посты для Telegram-канала об искусстве.\n"
-        "Выбирай менее известные, но реально существующие и эмоционально сильные картины разных художников, стран и эпох.\n"
-        "📛 Не выдумывай названия и авторов. Используй только проверенные произведения искусства из надёжных источников.\n"
-        "❗Если ты не уверен в существовании картины — не используй её, выбери другую.\n\n"
-        "Формат ответа строго JSON:\n"
-        "- post_text: строка, отформатированная в Markdown для Telegram\n"
-        "- image_urls: массив из 2–3 рабочих ссылок на изображения картины в высоком разрешении\n"
-        "  Используй источники: Wikimedia (upload.wikimedia.org), wikiart.org, Google Arts & Culture, сайты музеев\n\n"
-        "📌 Формат текста поста (post_text):\n"
+        "🔍 ВАЖНО: используй только реально существующие картины и художников.\n"
+        "📛 Нельзя выдумывать названия, авторов, годы или изображения. Если ты не уверен, что картина существует — выбери другую.\n"
+        "✅ Проверяй свои факты — выбирай работы, которые можно найти в источниках:\n"
+        "Wikimedia (upload.wikimedia.org), WikiArt.org, Google Arts & Culture, сайты музеев (например, metmuseum.org, tate.org.uk и др.)\n\n"
+        "📦 Формат ответа — строго JSON:\n"
+        "- post_text: текст поста (в Markdown для Telegram)\n"
+        "- image_urls: массив из 2–3 рабочих ссылок на изображения картины\n\n"
+        "📌 Формат текста поста:\n"
         "🖼 **«Название картины» — Автор (год)**\n\n"
-        "📜 Исторический контекст\nКраткий рассказ...\n\n"
+        "📜 Исторический контекст\nОписание...\n\n"
         "🔍 Детали, которые вы могли не заметить\n* ...\n* ...\n\n"
         "💡 Интересные факты\n...\n\n"
-        "#жанр #эпоха #техника"
+        "#жанр #эпоха #стиль"
     )
 
     try:
@@ -40,7 +40,7 @@ def generate_post():
 
         content = response.choices[0].message.content.strip()
 
-        # Вырезаем JSON, если обёрнут в тройные кавычки
+        # Вырезаем JSON, если обёрнут в блок ```json
         if content.startswith("```json"):
             match = re.search(r"```json\n(.*?)```", content, re.DOTALL)
             if match:
@@ -53,7 +53,6 @@ def generate_post():
             data = json.loads(content)
         except json.JSONDecodeError as e:
             logger.warning(f"⚠️ Ошибка JSON: {e}. Попытка автоочистки...")
-            # Пробуем экранировать символы вручную
             fixed = re.sub(r'(?<!\\)\\n', '\\\\n', content)
             fixed = re.sub(r'(?<!\\)\\t', '\\\\t', fixed)
             fixed = re.sub(r"(?<!\\)\\'", "'", fixed)
@@ -62,6 +61,17 @@ def generate_post():
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
         image_urls = data.get("image_urls", [])
         logger.info(f"Полученные image_urls: {image_urls}")
+
+        # Проверка на источники
+        if image_urls and all(
+            "wikiart.org" not in url and
+            "upload.wikimedia.org" not in url and
+            "google.com/culturalinstitute" not in url and
+            "metmuseum.org" not in url and
+            "tate.org.uk" not in url
+            for url in image_urls
+        ):
+            raise ValueError("⚠️ Все ссылки не из надёжных источников. Возможен фейк.")
 
         image_url = find_first_valid_image_url(image_urls)
         if not image_url:
