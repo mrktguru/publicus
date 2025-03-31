@@ -1,12 +1,12 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-// Задержка между действиями
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 (async () => {
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: false, // Показываем окно браузера
+    slowMo: 100, // Задержка между действиями (для наглядности)
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
@@ -14,18 +14,29 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   console.log('🌐 Открываем список художников...');
   await page.goto('https://artsandculture.google.com/category/artist', { waitUntil: 'networkidle2' });
 
-  // Прокрутка страницы вниз до конца, чтобы подгрузились все художники
-  let previousHeight;
+  // Скроллируем вниз, пока страница продолжает подгружать новых художников
+  let previousHeight = 0;
+  let currentHeight = 0;
+  let scrollTries = 0;
+  const maxScrollTries = 10;
+
   try {
-    while (true) {
-      previousHeight = await page.evaluate('document.body.scrollHeight');
+    while (scrollTries < maxScrollTries) {
+      currentHeight = await page.evaluate('document.body.scrollHeight');
+      if (currentHeight === previousHeight) {
+        scrollTries++;
+        console.log(`🟡 Ничего нового. Попытка ${scrollTries}/${maxScrollTries}`);
+      } else {
+        scrollTries = 0;
+        console.log(`🔽 Прокрутка... высота страницы: ${currentHeight}`);
+      }
+
+      previousHeight = currentHeight;
       await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
-      await delay(1500);
-      const newHeight = await page.evaluate('document.body.scrollHeight');
-      if (newHeight === previousHeight) break;
+      await delay(2000);
     }
   } catch (e) {
-    console.log('⚠️ Ошибка при скроллинге:', e);
+    console.log('⚠️ Ошибка при прокрутке:', e);
   }
 
   console.log('🔍 Извлекаем художников...');
@@ -43,9 +54,8 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     console.log(`${i + 1}. ${artist.name} — ${artist.link}`);
   });
 
-  // Сохраняем результат
   fs.writeFileSync('artists.json', JSON.stringify(artists, null, 2), 'utf-8');
-  console.log('\n💾 Данные сохранены в artists.json');
+  console.log('💾 Сохранено в artists.json');
 
   await browser.close();
 })();
