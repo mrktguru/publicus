@@ -12,8 +12,8 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 def generate_post():
     prompt = (
         "Ты искусствовед, создающий познавательные посты для Telegram-канала об искусстве.\n"
-        "Выбирай **менее известные, но реально существующие** и **эмоционально сильные** картины известных художников различных эпох.\n"
-        "📛 Не выдумывай названия и авторов. Используй только проверенные произведения искусства из надёжных источников, ссылки на которые есть в Wikimedia, wikiart.org, Google Arts & Culture, сайты музеев.\n"
+        "Выбирай менее известные, но реально существующие и эмоционально сильные картины разных художников, стран и эпох.\n"
+        "📛 Не выдумывай названия и авторов. Используй только проверенные произведения искусства из надёжных источников.\n"
         "❗Если ты не уверен в существовании картины — не используй её, выбери другую.\n\n"
         "Формат ответа строго JSON:\n"
         "- post_text: строка, отформатированная в Markdown для Telegram\n"
@@ -21,7 +21,7 @@ def generate_post():
         "  Используй источники: Wikimedia (upload.wikimedia.org), wikiart.org, Google Arts & Culture, сайты музеев\n\n"
         "📌 Формат текста поста (post_text):\n"
         "🖼 **«Название картины» — Автор (год)**\n\n"
-        "📜 Исторический контекст\n Краткий рассказ...\n\n"
+        "📜 Исторический контекст\nКраткий рассказ...\n\n"
         "🔍 Детали, которые вы могли не заметить\n* ...\n* ...\n\n"
         "💡 Интересные факты\n...\n\n"
         "#жанр #эпоха #техника"
@@ -37,8 +37,10 @@ def generate_post():
             temperature=0.7,
             max_tokens=800
         )
+
         content = response.choices[0].message.content.strip()
 
+        # Вырезаем JSON, если обёрнут в тройные кавычки
         if content.startswith("```json"):
             match = re.search(r"```json\n(.*?)```", content, re.DOTALL)
             if match:
@@ -49,15 +51,19 @@ def generate_post():
 
         try:
             data = json.loads(content)
-        except json.JSONDecodeError:
-            fixed = content.replace("\n", "\\n").replace("\t", "\\t")
+        except json.JSONDecodeError as e:
+            logger.warning(f"⚠️ Ошибка JSON: {e}. Попытка автоочистки...")
+            # Пробуем экранировать символы вручную
+            fixed = re.sub(r'(?<!\\)\\n', '\\\\n', content)
+            fixed = re.sub(r'(?<!\\)\\t', '\\\\t', fixed)
+            fixed = re.sub(r"(?<!\\)\\'", "'", fixed)
             data = json.loads(fixed)
 
         post_text = data.get("post_text", "⚠️ Не удалось получить текст.")
         image_urls = data.get("image_urls", [])
         logger.info(f"Полученные image_urls: {image_urls}")
-        image_url = find_first_valid_image_url(image_urls)
 
+        image_url = find_first_valid_image_url(image_urls)
         if not image_url:
             fallback_query = extract_query_from_post(post_text)
             logger.info(f"🔍 Поиск по Яндексу по запросу: {fallback_query}")
@@ -69,4 +75,3 @@ def generate_post():
         logger.error("Ошибка при генерации поста: %s", e)
         logger.error("Содержимое ответа OpenAI: %s", content)
     return post_text, image_url
-
