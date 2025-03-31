@@ -1,5 +1,7 @@
-pip install python-telegram-bot==13.15
-pip install apscheduler
-pip install python-dotenv
-pip install openai
-pip install pytz
+python-telegram-bot==13.15
+openai>=1.0.0
+python-dotenv
+apscheduler
+beautifulsoup4
+lxml
+requests
