@@ -1,10 +1,17 @@
 const fs = require('fs');
 const puppeteer = require('puppeteer');
 
+
+
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: true });
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ['--no-sandbox', '--disable-setuid-sandbox']
+});
+
+  
   const page = await browser.newPage();
 
   console.log('🌐 Открываем список художников...');
