@@ -15,11 +15,18 @@ def is_valid_image_url(url):
         }
         response = requests.get(url, headers=headers, timeout=7, stream=True, allow_redirects=True)
         content_type = response.headers.get('Content-Type', '')
+        logger.info(f"Ответ сервера: {response.status_code}, Content-Type: {content_type}")
         response.close()
-        return response.status_code == 200 and content_type.startswith('image/')
+
+        return (
+            response.status_code == 200 and
+            ('image' in content_type or 'octet-stream' in content_type)
+        )
     except Exception as e:
         logger.warning(f"Ошибка при проверке URL изображения: {e}")
         return False
+
+
 
 def find_first_valid_image_url(urls):
     for url in urls:
