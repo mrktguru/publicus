@@ -2,7 +2,7 @@
 import logging
 from telegram.ext import Updater
 
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, OPENAI_API_KEY
 from handlers import register_handlers
 from scheduler import start_scheduler
 
