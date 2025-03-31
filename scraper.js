@@ -1,29 +1,29 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
 
 async function fetchArtists() {
-  try {
-    const url = 'https://artsandculture.google.com/category/artist';
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'] // важно для VPS
+  });
 
-    const artists = [];
+  const page = await browser.newPage();
+  await page.goto('https://artsandculture.google.com/category/artist', { waitUntil: 'networkidle2' });
 
-    $('a').each((i, el) => {
-      const href = $(el).attr('href');
-      const text = $(el).text();
-      if (href && text && href.includes('/entity/')) {
-        artists.push({ name: text.trim(), link: `https://artsandculture.google.com${href}` });
-      }
-    });
+  const artists = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('a'))
+      .filter(a => a.href.includes('/entity/') && a.textContent.trim().length > 0)
+      .map(a => ({
+        name: a.textContent.trim(),
+        link: a.href
+      }));
+  });
 
-    console.log(`🔍 Найдено ${artists.length} художников:`);
-    artists.slice(0, 10).forEach((artist, i) => {
-      console.log(`${i + 1}. ${artist.name} — ${artist.link}`);
-    });
-  } catch (err) {
-    console.error('❌ Ошибка при парсинге:', err.message);
-  }
+  console.log(`🔍 Найдено ${artists.length} художников:`);
+  artists.slice(0, 10).forEach((artist, i) => {
+    console.log(`${i + 1}. ${artist.name} — ${artist.link}`);
+  });
+
+  await browser.close();
 }
 
 fetchArtists();
