@@ -14,27 +14,36 @@ const artworksFile = path.join(__dirname, 'artworks.json');
   const page = await browser.newPage();
   const artworks = {};
 
-  for (const artist of artists) {
-    console.log(`🎨 Загружаем картины: ${artist.name}`);
-    await page.goto(artist.link, { waitUntil: 'networkidle2' });
+  console.log(`🔍 Всего художников: ${artists.length}\n`);
 
-    const artistArtworks = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('a'))
-        .filter(a => a.href.includes('/asset/'))
-        .map(a => ({
-          title: a.textContent.trim(),
-          url: a.href
-        }));
-    });
+  for (const [index, artist] of artists.entries()) {
+    console.log(`🎨 [${index + 1}/${artists.length}] Загружаем: ${artist.name}`);
+    try {
+      await page.goto(artist.link, { waitUntil: 'networkidle2', timeout: 30000 });
 
-    console.log(`🔸 Найдено ${artistArtworks.length} картин у ${artist.name}`);
-    artworks[artist.name] = artistArtworks;
+      const artistArtworks = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('a'))
+          .filter(a => a.href.includes('/asset/'))
+          .map(a => ({
+            title: a.textContent.trim(),
+            url: a.href
+          }))
+          .filter(item => item.title.length > 0);
+      });
 
-    await new Promise(resolve => setTimeout(resolve, 1000)); // задержка между художниками
+      console.log(`   ➕ Найдено: ${artistArtworks.length} картин\n`);
+      artworks[artist.name] = artistArtworks;
+
+    } catch (err) {
+      console.warn(`   ⚠️ Ошибка при обработке ${artist.name}: ${err.message}\n`);
+    }
+
+    // Задержка между запросами (1 секунда)
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   fs.writeFileSync(artworksFile, JSON.stringify(artworks, null, 2), 'utf-8');
-  console.log(`✅ Сохранено в файл: ${artworksFile}`);
+  console.log(`✅ Готово! Данные сохранены в: ${artworksFile}`);
 
   await browser.close();
 })();
