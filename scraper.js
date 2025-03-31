@@ -1,9 +1,15 @@
 const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
+
+const OUTPUT_FILE = path.join(__dirname, 'artists.json');
 
 async function fetchArtists() {
+  console.log('🌐 Открываем страницу с художниками...');
+
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'] // важно для VPS
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
   const page = await browser.newPage();
@@ -18,12 +24,23 @@ async function fetchArtists() {
       }));
   });
 
-  console.log(`🔍 Найдено ${artists.length} художников:`);
-  artists.slice(0, 10).forEach((artist, i) => {
-    console.log(`${i + 1}. ${artist.name} — ${artist.link}`);
-  });
-
   await browser.close();
+
+  console.log(`✅ Найдено ${artists.length} художников.`);
+
+  if (artists.length > 0) {
+    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(artists, null, 2), 'utf-8');
+    console.log(`💾 Сохранено в файл: ${OUTPUT_FILE}`);
+
+    console.log('\n🔹 Примеры:');
+    artists.slice(0, 10).forEach((artist, i) => {
+      console.log(`${i + 1}. ${artist.name} — ${artist.link}`);
+    });
+  } else {
+    console.warn('⚠️ Художники не найдены. Возможно, нужно прокрутить страницу или обновить селекторы.');
+  }
 }
 
-fetchArtists();
+fetchArtists().catch(err => {
+  console.error('❌ Ошибка в процессе парсинга:', err);
+});
