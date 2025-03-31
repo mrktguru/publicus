@@ -8,48 +8,50 @@ const OUTPUT_FILE = path.join(__dirname, 'artists.json');
   console.log('🌐 Открываем список художников...');
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
+
   const page = await browser.newPage();
   await page.goto('https://artsandculture.google.com/category/artist', {
-    waitUntil: 'networkidle2',
+    waitUntil: 'domcontentloaded'
   });
 
-  // Прокрутка страницы до конца
+  // Прокрутка с подгрузкой
   let previousHeight = 0;
-  let scrollStep = 1600;
-  let maxScrolls = 30;
-  for (let i = 0; i < maxScrolls; i++) {
-    await page.evaluate((step) => {
-      window.scrollBy(0, step);
-    }, scrollStep);
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    const currentHeight = await page.evaluate(() => document.body.scrollHeight);
-    console.log(`🔽 Прокрутка... текущая высота: ${currentHeight}`);
-    if (currentHeight === previousHeight) break;
-    previousHeight = currentHeight;
+  let sameCount = 0;
+  const maxSame = 5;
+
+  while (sameCount < maxSame) {
+    const height = await page.evaluate('document.body.scrollHeight');
+    if (height === previousHeight) {
+      sameCount++;
+    } else {
+      sameCount = 0;
+      previousHeight = height;
+    }
+
+    await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    console.log(`🔽 Прокрутка... высота: ${height}`);
   }
 
-  // Извлечение данных о художниках
+  // Извлечение карточек художников
   const artists = await page.evaluate(() => {
-    const anchors = Array.from(document.querySelectorAll('a'))
-      .filter(a =>
-        a.href.includes('/entity/') &&
-        a.href.includes('?categoryId=artist') &&
-        a.innerText.trim().length > 0
-      );
+    const cards = document.querySelectorAll('.YVvGBb');
+    const data = [];
 
-    const seen = new Set();
-    return anchors
-      .filter(a => {
-        if (seen.has(a.href)) return false;
-        seen.add(a.href);
-        return true;
-      })
-      .map(a => ({
-        name: a.innerText.trim(),
-        link: a.href
-      }));
+    cards.forEach(card => {
+      const linkEl = card.querySelector('a');
+      const nameEl = card.querySelector('.kHMtLb');
+      if (linkEl && nameEl) {
+        data.push({
+          name: nameEl.textContent.trim(),
+          link: 'https://artsandculture.google.com' + linkEl.getAttribute('href')
+        });
+      }
+    });
+
+    return data;
   });
 
   console.log(`✅ Найдено ${artists.length} художников.`);
