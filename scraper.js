@@ -1,46 +1,37 @@
-const puppeteer = require('puppeteer');
+const axios = require('axios');
+const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
 
+const URL = 'https://artsandculture.google.com/category/artist';
 const OUTPUT_FILE = path.join(__dirname, 'artists.json');
 
 (async () => {
-  console.log('🌐 Открываем страницу с художниками...');
+  console.log('🌐 Загружаем страницу художников...');
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+  try {
+    const response = await axios.get(URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
 
-  const page = await browser.newPage();
-  await page.goto('https://artsandculture.google.com/category/artist', {
-    waitUntil: 'networkidle2'
-  });
+    const $ = cheerio.load(response.data);
+    const artists = [];
 
-  // Делаем паузу на подгрузку начального контента
-  await new Promise(resolve => setTimeout(resolve, 3000));
+    $('a[href*="/entity/"][href*="?categoryId=artist"]').each((i, el) => {
+      const name = $(el).text().trim();
+      const href = $(el).attr('href');
+      const url = 'https://artsandculture.google.com' + href;
 
-  const artists = await page.evaluate(() => {
-    const cards = document.querySelectorAll('.YVvGBb');
-    const data = [];
-
-    cards.forEach(card => {
-      const linkEl = card.querySelector('a');
-      const nameEl = card.querySelector('.kHMtLb');
-      if (linkEl && nameEl) {
-        data.push({
-          name: nameEl.textContent.trim(),
-          link: 'https://artsandculture.google.com' + linkEl.getAttribute('href')
-        });
+      if (name && url) {
+        artists.push({ name, url });
       }
     });
 
-    return data;
-  });
+    console.log(`✅ Найдено ${artists.length} художников.`);
 
-  console.log(`✅ Найдено ${artists.length} художников (без прокрутки).`);
-  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(artists, null, 2), 'utf-8');
-  console.log(`💾 Сохранено в файл: ${OUTPUT_FILE}`);
-
-  await browser.close();
+    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(artists, null, 2), 'utf-8');
+    console.log(`💾 Сохранено в файл: ${OUTPUT_FILE}`);
+  } catch (error) {
+    console.error('❌ Ошибка при парсинге:', error.message);
+  }
 })();
