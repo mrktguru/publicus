@@ -7,7 +7,12 @@ from openai_utils import generate_post
 import time
 
 def start(update, context):
-    update.message.reply_text("Привет! Я бот-публикатор искусства.")
+    keyboard = [[InlineKeyboardButton("✨ Сгенерировать пост", callback_data="generate_post")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        "Привет! Я бот-публикатор искусства. Нажмите кнопку ниже, чтобы сгенерировать пост:",
+        reply_markup=reply_markup
+    )
 
 def generate(update, context):
     if update.message.from_user.id != ADMIN_CHAT_ID:
@@ -32,6 +37,18 @@ def send_moderation_request(context, post_id, post_text, image_url):
 def button(update, context):
     query = update.callback_query
     query.answer()
+
+    if query.data == "generate_post":
+        if query.from_user.id != ADMIN_CHAT_ID:
+            query.edit_message_text("❌ У вас нет прав на генерацию поста.")
+            return
+        post_text, image_url = generate_post()
+        post_id = str(int(time.time()))
+        add_post_to_queue(post_id, post_text, image_url)
+        send_moderation_request(context, post_id, post_text, image_url)
+        query.edit_message_text("✅ Пост сгенерирован и отправлен на модерацию.")
+        return
+
     action, post_id = query.data.split('_', 1)
     if post_id not in posts_queue:
         query.edit_message_caption(caption="Пост не найден.")
