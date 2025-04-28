@@ -1,0 +1,85 @@
+"""
+Alembic migration environment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Приложение использует **async-engine** (sqlite+aiosqlite).
+* Alembic работает синхронно ⇒ создаём временный **sync-engine**
+  только во время миграций.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from logging.config import fileConfig
+from pathlib import Path
+
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
+
+# ======================================================================
+#  импортируем MetaData всех моделей
+# ======================================================================
+from database.db import engine as async_engine  # AsyncEngine приложения
+from database.models import Base                # declarative_base()
+# ======================================================================
+
+# -------------------------------------------------
+# Alembic Config — берётся из alembic.ini
+# -------------------------------------------------
+config = context.config
+fileConfig(config.config_file_name)  # подключаем логирование Alembic
+
+# ----------------------------------------------------------------------
+# Создаём СИНХРОННЫЙ URL для миграций
+#   sqlite+aiosqlite:///bot.db  →  sqlite:///bot.db
+# ----------------------------------------------------------------------
+SYNC_DATABASE_URL = str(
+    make_url(str(async_engine.url)).set(drivername="sqlite")
+)
+
+# ----------------------------------------------------------------------
+# OFF-line режим — Alembic формирует SQL-файл без подключения к БД
+# ----------------------------------------------------------------------
+def run_migrations_offline() -> None:
+    """Run migrations in 'offline' mode."""
+    context.configure(
+        url=SYNC_DATABASE_URL,
+        target_metadata=Base.metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+# ----------------------------------------------------------------------
+# ON-line режим — прямое подключение к БД и выполнение миграций
+# ----------------------------------------------------------------------
+def run_migrations_online() -> None:
+    """Run migrations in 'online' mode."""
+    connectable = engine_from_config(
+        {
+            "sqlalchemy.url": SYNC_DATABASE_URL,
+        },
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=Base.metadata,
+            render_as_batch=True,    # важно для SQLite
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+# ----------------------------------------------------------------------
+#  Запускаем подходящую процедуру
+# ----------------------------------------------------------------------
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    # Alembic 1.9+ допускает async-обёртку, но нам достаточно sync-engine
+    run_migrations_online()

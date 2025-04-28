@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+  publicus:
+    build: .
+    container_name: publicus
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
