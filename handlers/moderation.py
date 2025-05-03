@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from database.db import AsyncSessionLocal
-from database.models import GeneratedPost
+from database.models import Post   # вместо GeneratedPost
 from sqlalchemy import select
 from aiogram.fsm.context import FSMContext
 

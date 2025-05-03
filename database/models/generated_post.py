@@ -4,19 +4,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 class GeneratedPost(Base):
-    """
-    Пост, который бот сгенерировал в рамках определённой серии.
-    """
     __tablename__ = "generated_posts"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id:          Mapped[int]      = mapped_column(primary_key=True)
+    series_id:   Mapped[int]      = mapped_column(ForeignKey("generated_series.id"))
+    chat_id:     Mapped[int]      = mapped_column(BigInteger)
+    text:        Mapped[str]      = mapped_column(Text)
+    media_file_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    publish_at:  Mapped[dt.datetime] = mapped_column(DateTime)
+    status:      Mapped[str]      = mapped_column(String, default="pending")
+    created_at:  Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    **published:  Mapped[bool]     = mapped_column(Boolean, default=False)**   # ← ДОБАВИТЬ
 
-    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    publish_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-
-    published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # ← новое поле
 
     series_id: Mapped[int] = mapped_column(
         ForeignKey("generated_series.id"),
