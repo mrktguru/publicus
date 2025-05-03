@@ -1,93 +1,49 @@
+# handlers/queue.py
 from aiogram import Router, F
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
-from aiogram.filters import Command
-from database.db import AsyncSessionLocal
-from database.models import Post
-from sqlalchemy import select
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from sqlalchemy import select, and_
 from datetime import datetime
-from zoneinfo import ZoneInfo
+
+from database.db import SessionLocal
+from database.models import Post, Group
+from keyboards.main import main_menu_kb
 
 router = Router()
 
-PAGE_SIZE = 10
 
-def build_page(posts: list[Post], page: int) -> tuple[str, InlineKeyboardMarkup | None]:
-    """Формирует текст и клавиатуру для страницы `page` (0-based)."""
-    start = page * PAGE_SIZE
-    end = start + PAGE_SIZE
-    slice_ = posts[start:end]
+@router.message(F.text == "📋 Очередь публикаций")
+async def show_queue(message: Message, state: FSMContext):
+    data = await state.get_data()
+    group_id = data.get("group_id")
+    if not group_id:
+        return await message.answer("❌ Сначала выберите группу через /start")
 
-    text_lines = [
-        f"🗕️ Запланированные посты (стр. {page + 1}/{(len(posts) - 1) // PAGE_SIZE + 1}):\n"
+    async with SessionLocal() as s:
+        group = await s.get(Group, group_id)
+        if not group:
+            return await message.answer("❌ Группа не найдена.")
+        q = (
+            select(Post)
+            .where(
+                and_(
+                    Post.chat_id == group.chat_id,
+                    Post.status == "approved",
+                    Post.published.is_(False),
+                )
+            )
+            .order_by(Post.publish_at)
+        )
+        posts = (await s.execute(q)).scalars().all()
+
+    if not posts:
+        return await message.answer("📦 Очередь пуста.", reply_markup=main_menu_kb())
+
+    lines = [
+        f"🕒 {p.publish_at:%d.%m %H:%M} — { (p.text or '')[:40]}…" for p in posts
     ]
-    for p in slice_:
-        text_lines.append(f"• {p.publish_at:%d.%m %H:%M} — {p.text[:50]}…")
-    text = "\n".join(text_lines)
-
-    # навигация
-    buttons = []
-    if page > 0:
-        buttons.append(
-            InlineKeyboardButton(text="⏪ Назад", callback_data=f"queue_page_{page-1}")
-        )
-    if end < len(posts):
-        buttons.append(
-            InlineKeyboardButton(text="Вперёд ⏩", callback_data=f"queue_page_{page+1}")
-        )
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[buttons]) if buttons else None
-    return text, kb
-
-# —— команда /queue ——
-@router.message(Command("queue"))
-async def handle_queue_command(message: Message):
-    await show_queue(message)
-
-@router.message(lambda m: m.text and m.text.lower().startswith("очередь"))
-async def handle_queue_text(message: Message):
-    await show_queue(message)
-
-async def show_queue(message: Message):
-    async with AsyncSessionLocal() as session:
-        posts = (
-            await session.execute(
-                select(Post).where(
-                    Post.status == "approved",
-                    Post.publish_at > datetime.now(ZoneInfo("Europe/Moscow")),
-                ).order_by(Post.publish_at)
-            )
-        ).scalars().all()
-
-    if not posts:
-        return await message.answer("Очередь пуста 🤷‍♂️")
-
-    text, kb = build_page(posts, page=0)
-    await message.answer(text, reply_markup=kb)
-
-# —— обработка пагинации ——
-@router.callback_query(F.data.startswith("queue_page_"))
-async def paginate_queue(call: CallbackQuery):
-    page = int(call.data.split("_")[-1])
-
-    async with AsyncSessionLocal() as session:
-        posts = (
-            await session.execute(
-                select(Post).where(
-                    Post.status == "approved",
-                    Post.publish_at > datetime.now(ZoneInfo("Europe/Moscow")),
-                ).order_by(Post.publish_at)
-            )
-        ).scalars().all()
-
-    if not posts:
-        await call.message.edit_text("Очередь пуста 🤷‍♂️")
-        return await call.answer()
-
-    text, kb = build_page(posts, page)
-    await call.message.edit_text(text, reply_markup=kb)
-    await call.answer()
+    await message.answer(
+        "<b>📋 Очередь публикаций:</b>\n\n" + "\n".join(lines),
+        parse_mode="HTML",
+        reply_markup=main_menu_kb(),
+    )
