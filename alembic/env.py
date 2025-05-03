@@ -1,5 +1,4 @@
-"""
-Alembic migration environment
+"""Alembic migration environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * Приложение использует **async-engine** (sqlite+aiosqlite).
@@ -8,6 +7,16 @@ Alembic migration environment
 """
 
 from __future__ import annotations
+
+import os
+import sys
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Позволяем env.py видеть пакет database/ и другие модули вашего приложения
+here = os.path.dirname(__file__)                                  # .../publicus/alembic
+root = os.path.abspath(os.path.join(here, os.pardir))            # .../publicus
+sys.path.insert(0, root)
+# ──────────────────────────────────────────────────────────────────────────────
 
 import asyncio
 from logging.config import fileConfig
@@ -58,9 +67,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     connectable = engine_from_config(
-        {
-            "sqlalchemy.url": SYNC_DATABASE_URL,
-        },
+        {"sqlalchemy.url": SYNC_DATABASE_URL},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -69,7 +76,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=Base.metadata,
-            render_as_batch=True,    # важно для SQLite
+            render_as_batch=True,  # важно для SQLite
         )
 
         with context.begin_transaction():
@@ -81,5 +88,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    # Alembic 1.9+ допускает async-обёртку, но нам достаточно sync-engine
     run_migrations_online()
