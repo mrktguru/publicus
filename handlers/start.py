@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import Command
 from handlers.group_select import choose_group
 
 print("🔎 handlers.start imported")
@@ -19,7 +20,7 @@ async def cmd_start(message: Message, state: FSMContext):
     # 2. отобразить inline‑меню выбора/добавления группы
     await choose_group(message)
 
-# Добавляем обработчик для /start команды без фильтра текста, на случай если F.text не работает
-@router.message(commands=["start"])
+# Обработчик команды /start через фильтр Command
+@router.message(Command("start"))
 async def cmd_start_command(message: Message, state: FSMContext):
     await cmd_start(message, state)
