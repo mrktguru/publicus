@@ -102,12 +102,16 @@ async def handle_text(message: Message, state: FSMContext):
                 ]
             )
             
-            # Сначала отправляем превью публикации
+            # 1. Отправляем заголовок предпросмотра
+            await message.answer("📝 Предпросмотр поста:")
+            
+            # 2. Отправляем чистое фото с подписью
             await message.answer_photo(
                 photo=media_file_id,
-                caption=f"📝 Предпросмотр поста:\n\n{text}",
+                caption=text
             )
             
+            # 3. Отправляем кнопки действий отдельным сообщением
             await message.answer(
                 "Выберите действие с этим постом:",
                 reply_markup=kb
@@ -152,7 +156,7 @@ async def handle_photo(message: Message, state: FSMContext):
     # Сохраняем данные
     await state.update_data(text=text_to_save, media_file_id=file_id)
     
-    # Показываем готовый пост с превью и кнопками действий
+    # Кнопки для действий с постом
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
@@ -163,15 +167,19 @@ async def handle_photo(message: Message, state: FSMContext):
         ]
     )
     
-    # Сначала отправляем сообщение о получении фото
+    # 1. Сначала отправляем сообщение о получении фото
     await message.answer("✅ Фото получено!")
     
-    # Затем отправляем превью публикации
+    # 2. Отправляем заголовок предпросмотра
+    await message.answer("📝 Предпросмотр поста:")
+    
+    # 3. Отправляем чистое фото с подписью (без дополнительных надписей)
     await message.answer_photo(
         photo=file_id,
-        caption=f"📝 Предпросмотр поста:\n\n{text_to_save}",
+        caption=text_to_save
     )
     
+    # 4. Отправляем кнопки действий отдельным сообщением
     await message.answer(
         "Выберите действие с этим постом:",
         reply_markup=kb
@@ -203,9 +211,15 @@ async def show_publishing_options(call: CallbackQuery, state: FSMContext):
         ]
     )
     
-    # Показываем текст поста
-    await call.message.edit_text(
-        f"📝 Предпросмотр текста:\n\n{text}\n\nВыберите действие:",
+    # Показываем заголовок предпросмотра
+    await call.message.edit_text("📝 Предпросмотр поста:")
+    
+    # Затем отправляем сам текст поста
+    await call.message.answer(text)
+    
+    # И кнопки действий
+    await call.message.answer(
+        "Выберите действие с этим постом:",
         reply_markup=kb
     )
     
@@ -349,10 +363,7 @@ async def input_datetime(message: Message, state: FSMContext):
     data["publish_at"] = dt
     await state.update_data(data)
     
-    snippet = data.get("text", "")
-    if len(snippet) > 50:
-        snippet = snippet[:50] + "…"
-    
+    text = data.get("text", "")
     media_file_id = data.get("media_file_id")
 
     kb = InlineKeyboardMarkup(
@@ -362,23 +373,25 @@ async def input_datetime(message: Message, state: FSMContext):
         ]
     )
     
-    # Если есть фото, показываем превью с фото
+    # Отправляем заголовок для предпросмотра
+    await message.answer("📝 Предпросмотр запланированного поста:")
+    
+    # Если есть фото, показываем пост с фото
     if media_file_id:
+        # Отправляем чистый пост с фото
         await message.answer_photo(
             photo=media_file_id,
-            caption=f"📝 Предпросмотр запланированного поста:\n\n{snippet}{'...' if len(snippet) > 50 else ''}\n\n🕒 {dt:%d.%m.%Y %H:%M}",
-        )
-        
-        await message.answer(
-            "Подтвердить запланированную публикацию?",
-            reply_markup=kb
+            caption=text
         )
     else:
         # Если фото нет, показываем только текст
-        await message.answer(
-            f"Вы запланировали:\n\n{snippet}\n\n🕒 {dt:%d.%m.%Y %H:%M}\n\nПодтвердить?",
-            reply_markup=kb,
-        )
+        await message.answer(text)
+    
+    # Отдельно показываем запланированное время
+    await message.answer(
+        f"🕒 Запланировано на: {dt:%d.%m.%Y %H:%M}\n\nПодтвердить?",
+        reply_markup=kb
+    )
     
     await state.set_state(ManualPostStates.waiting_for_confirm)
 
