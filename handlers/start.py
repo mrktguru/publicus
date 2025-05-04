@@ -18,3 +18,8 @@ async def cmd_start(message: Message, state: FSMContext):
     )
     # 2. отобразить inline‑меню выбора/добавления группы
     await choose_group(message)
+
+# Добавляем обработчик для /start команды без фильтра текста, на случай если F.text не работает
+@router.message(commands=["start"])
+async def cmd_start_command(message: Message, state: FSMContext):
+    await cmd_start(message, state)
