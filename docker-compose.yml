@@ -7,5 +7,7 @@ services:
       - .env
     volumes:
       - .:/app
+      # Монтируем базу данных отдельно, чтобы она сохранялась между перезапусками
+      - ./bot.db:/app/bot.db
     restart: unless-stopped
-    entrypoint: ["/app/docker-entrypoint.sh"]
+    command: bash -c "python init_db.py && python bot.py"
