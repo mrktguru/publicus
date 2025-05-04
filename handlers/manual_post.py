@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from datetime import datetime
 from zoneinfo import ZoneInfo                                # ← уже был
 
-from database.db import AsyncSessionLocal
+from database.db import AsyncSessionLocal  # Исправлено с SessionLocal на AsyncSessionLocal
 from database.models import Post, Group
 from states.post_states import ManualPostStates
 from keyboards.main import main_menu_kb
@@ -61,7 +61,7 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
     group_pk = data.get("group_id")
 
     # 1) Получаем chat_id
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:  # Исправлено с SessionLocal на AsyncSessionLocal
         group = await session.get(Group, group_pk)
         if not group:
             await call.message.edit_text("❌ Ошибка: выбранная группа не найдена.")
@@ -83,7 +83,7 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
 
     # 4) Сохраняем запись в БД
     now_msk = datetime.now(ZoneInfo("Europe/Moscow"))
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:  # Исправлено с SessionLocal на AsyncSessionLocal
         post = Post(
             chat_id=chat_id,
             text=text,
@@ -91,8 +91,8 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
             publish_at=now_msk,            # aware-дата
             created_by=call.from_user.id,
             status="sent",
-            published=True,
-            published_at=now_msk,
+            published=True
+            # Убрано поле published_at, которого нет в модели
         )
         session.add(post)
         await session.commit()
@@ -142,7 +142,7 @@ async def confirm_manual(call: CallbackQuery, state: FSMContext):
     group_pk = data.get("group_id")
     media_file_id = data.get("media_file_id")
 
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:  # Исправлено с SessionLocal на AsyncSessionLocal
         group = await session.get(Group, group_pk)
         chat_id = group.chat_id if group else None
         post = Post(
