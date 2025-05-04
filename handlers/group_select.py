@@ -24,7 +24,7 @@ async def choose_group(message: Message):
     ikb = InlineKeyboardMarkup(inline_keyboard=buttons)
     
     try:
-        # получить все группы, которые добавил этот пользователь
+        # получить все группы, которые добавил этот пользователя
         async with AsyncSessionLocal() as session:
             try:
                 # Сначала проверим существование таблицы
@@ -101,4 +101,19 @@ async def select_group(call: CallbackQuery, state: FSMContext):
         logger.error(f"Error in select_group: {e}")
         await call.message.answer("Произошла ошибка при выборе группы. Попробуйте снова.")
 
-@router.callback_query(F.data == "open_group_settings")<span class="cursor">█</span>
+@router.callback_query(F.data == "open_group_settings")
+async def open_settings(call: CallbackQuery):
+    try:
+        # удаляем текущее сообщение
+        await call.message.delete()
+        # отправляем инструкцию по добавлению новой группы
+        await call.bot.send_message(
+            call.from_user.id,
+            "Перешлите боту любое сообщение из группы/канала, чтобы добавить её."
+        )
+    except Exception as e:
+        logger.error(f"Error in open_settings: {e}")
+        await call.bot.send_message(
+            call.from_user.id,
+            "Произошла ошибка. Попробуйте снова или обратитесь к администратору бота."
+        )
