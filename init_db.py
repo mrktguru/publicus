@@ -1,4 +1,4 @@
-# init_db.py
+# init_db.py v03
 import asyncio
 from database.db import engine, Base
 
