@@ -10,7 +10,7 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
     Главное меню после /start
     """
     buttons = [
-        [KeyboardButton(text="📅 Создать пост")],
+        [KeyboardButton(text="✏️ Создать пост")],
         [KeyboardButton(text="🤖 Автогенерация постов")],
         [KeyboardButton(text="🕓 Ожидают публикации")],
         [KeyboardButton(text="📋 Очередь публикаций"), KeyboardButton(text="📜 История")],
