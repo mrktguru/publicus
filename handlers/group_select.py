@@ -11,12 +11,17 @@ print("🔎 handlers.group_select imported")
 router = Router()
 
 @router.message(F.text == "🔙 Сменить группу")
+async def change_group(message: Message):
+    # Перенаправляем на выбор группы
+    await choose_group(message)
+
+# Выделяем в отдельную функцию, доступную для вызова из других обработчиков
 async def choose_group(message: Message):
     # получить все группы, которые добавил этот пользователь
     async with AsyncSessionLocal() as session:
-        groups = (await session.execute(
-            select(Group).where(Group.added_by == message.from_user.id)
-        )).scalars().all()
+        query = select(Group).where(Group.added_by == message.from_user.id)
+        result = await session.execute(query)
+        groups = result.scalars().all()
 
     # собрать inline‑кнопки: сначала группы, затем всегда настройка
     buttons = [
