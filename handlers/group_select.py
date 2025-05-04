@@ -1,8 +1,8 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
-from database.db import AsyncSessionLocal
+from sqlalchemy import select, inspect
+from database.db import AsyncSessionLocal, engine
 from database.models import Group
 from keyboards.main import main_menu_kb
 
@@ -19,9 +19,27 @@ async def change_group(message: Message):
 async def choose_group(message: Message):
     # получить все группы, которые добавил этот пользователь
     async with AsyncSessionLocal() as session:
-        query = select(Group).where(Group.added_by == message.from_user.id)
-        result = await session.execute(query)
-        groups = result.scalars().all()
+        try:
+            # Проверяем наличие колонки added_by
+            inspector = inspect(engine)
+            columns = [col['name'] for col in inspector.get_columns('groups')]
+            
+            if 'added_by' in columns:
+                # Колонка существует, используем обычный запрос
+                query = select(Group).where(Group.added_by == message.from_user.id)
+            else:
+                # Колонка не существует, получаем все группы
+                print("WARNING: 'added_by' column not found in groups table. Fetching all groups.")
+                query = select(Group)
+                
+            result = await session.execute(query)
+            groups = result.scalars().all()
+        except Exception as e:
+            print(f"ERROR in choose_group: {e}")
+            # Обрабатываем ошибку, получая все группы
+            query = select(Group)
+            result = await session.execute(query)
+            groups = result.scalars().all()
 
     # собрать inline‑кнопки: сначала группы, затем всегда настройка
     buttons = [
