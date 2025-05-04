@@ -2,8 +2,14 @@
 set -e
 
 # Инициализация базы данных
-echo "Initializing database..."
-python init_db.py
+echo "Checking if database exists..."
+if [ ! -s /app/bot.db ]; then
+    echo "Database file empty or not found, initializing..."
+    python manual_init_db.py
+    echo "Database initialized successfully!"
+else
+    echo "Database already exists, skipping initialization"
+fi
 
 # Запуск бота
 echo "Starting bot..."
