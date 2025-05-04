@@ -8,4 +8,4 @@ services:
     volumes:
       - .:/app
     restart: unless-stopped
-    command: bash -c "python init_db.py && python bot.py"
+    entrypoint: ["/app/docker-entrypoint.sh"]
