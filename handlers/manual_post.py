@@ -5,8 +5,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     CallbackQuery,
     ReplyKeyboardRemove,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
+    InputMediaPhoto,
 )
 from aiogram.fsm.context import FSMContext
 from datetime import datetime
@@ -73,13 +72,12 @@ async def handle_text(message: Message, state: FSMContext):
     
     # Если уже есть текст, но нет фото - предложим заменить текст или добавить фото
     if data.get("text") and not media_file_id:
-        kb = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📸 Добавить фото")],
-                [KeyboardButton(text="⏱️ Далее (планирование)")],
-                [KeyboardButton(text="❌ Отмена")]
-            ],
-            resize_keyboard=True
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📸 Добавить фото", callback_data="add_photo")],
+                [InlineKeyboardButton(text="⏱️ Далее (планирование)", callback_data="proceed_to_planning")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_creation")],
+            ]
         )
         await state.update_data(text=text)
         await message.answer(
@@ -87,32 +85,47 @@ async def handle_text(message: Message, state: FSMContext):
             "Хотите добавить фотографию или перейти к планированию публикации?",
             reply_markup=kb
         )
-        await state.set_state(ManualPostStates.waiting_for_media_or_continue)
     
-    # Если уже есть фото, но пришел новый текст - обновляем текст
+    # Если уже есть фото, но пришел новый текст - обновляем текст и показываем превью
     elif media_file_id:
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
-                [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")]
-            ]
-        )
         await state.update_data(text=text)
-        await message.answer(
-            f"✅ Готово! Фото и текст получены.\n\nТекст: {text[:100]}{'...' if len(text) > 100 else ''}",
-            reply_markup=kb
-        )
-        await state.set_state(ManualPostStates.waiting_for_choice)
+        
+        # Отправляем предпросмотр публикации
+        try:
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
+                    [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")],
+                    [InlineKeyboardButton(text="✏️ Изменить текст", callback_data="edit_text")],
+                    [InlineKeyboardButton(text="🖼️ Изменить фото", callback_data="edit_photo")],
+                    [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_creation")],
+                ]
+            )
+            
+            # Сначала отправляем превью публикации
+            await message.answer_photo(
+                photo=media_file_id,
+                caption=f"📝 Предпросмотр поста:\n\n{text}",
+            )
+            
+            await message.answer(
+                "Выберите действие с этим постом:",
+                reply_markup=kb
+            )
+            
+            await state.set_state(ManualPostStates.waiting_for_choice)
+        except Exception as e:
+            logger.error(f"Error showing post preview: {e}")
+            await message.answer(f"❌ Произошла ошибка при показе предпросмотра. Пожалуйста, попробуйте снова.")
     
     # Если ни текста, ни фото еще нет - сохраняем текст и предлагаем добавить фото
     else:
-        kb = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="📸 Добавить фото")],
-                [KeyboardButton(text="⏱️ Далее (планирование)")],
-                [KeyboardButton(text="❌ Отмена")]
-            ],
-            resize_keyboard=True
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📸 Добавить фото", callback_data="add_photo")],
+                [InlineKeyboardButton(text="⏱️ Далее (планирование)", callback_data="proceed_to_planning")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_creation")],
+            ]
         )
         await state.update_data(text=text)
         await message.answer(
@@ -120,7 +133,6 @@ async def handle_text(message: Message, state: FSMContext):
             "Хотите добавить фотографию или перейти к планированию публикации?",
             reply_markup=kb
         )
-        await state.set_state(ManualPostStates.waiting_for_media_or_continue)
 
 # ── обработка изображения ───────────────────────────────────────
 @router.message(ManualPostStates.waiting_for_content, F.photo)
@@ -137,85 +149,92 @@ async def handle_photo(message: Message, state: FSMContext):
     else:
         text_to_save = caption
     
-    # Сохраняем данные и показываем кнопки действий
+    # Сохраняем данные
     await state.update_data(text=text_to_save, media_file_id=file_id)
     
+    # Показываем готовый пост с превью и кнопками действий
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
-            [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")]
+            [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")],
+            [InlineKeyboardButton(text="✏️ Изменить текст", callback_data="edit_text")],
+            [InlineKeyboardButton(text="🖼️ Изменить фото", callback_data="edit_photo")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_creation")],
         ]
     )
     
-    text_preview = text_to_save[:100] + ('...' if len(text_to_save) > 100 else '') if text_to_save else "Без текста"
+    # Сначала отправляем сообщение о получении фото
+    await message.answer("✅ Фото получено!")
+    
+    # Затем отправляем превью публикации
+    await message.answer_photo(
+        photo=file_id,
+        caption=f"📝 Предпросмотр поста:\n\n{text_to_save}",
+    )
+    
     await message.answer(
-        f"✅ Фото получено!\n\nТекст: {text_preview}\n\nВыберите действие:",
+        "Выберите действие с этим постом:",
         reply_markup=kb
     )
+    
     await state.set_state(ManualPostStates.waiting_for_choice)
 
-# ── обработка изображения на этапе ожидания медиа ──────────────
-@router.message(ManualPostStates.waiting_for_media_or_continue, F.photo)
-async def handle_photo_after_text(message: Message, state: FSMContext):
-    logger.info("Handling photo in waiting_for_media_or_continue state")
-    data = await state.get_data()
-    file_id = message.photo[-1].file_id
-    caption = message.caption or ""
-    
-    # Используем сохраненный текст, если новый не предоставлен
-    text_to_save = data.get("text", "")
-    if caption:
-        text_to_save = caption
-    
-    # Сохраняем данные и показываем кнопки действий
-    await state.update_data(text=text_to_save, media_file_id=file_id)
-    
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
-            [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")]
-        ]
-    )
-    
-    text_preview = text_to_save[:100] + ('...' if len(text_to_save) > 100 else '') if text_to_save else "Без текста"
-    await message.answer(
-        f"✅ Фото добавлено!\n\nТекст: {text_preview}\n\nВыберите действие:",
-        reply_markup=kb
-    )
-    await state.set_state(ManualPostStates.waiting_for_choice)
-
-# ── обработка кнопок во время ввода контента ────────────────────
-@router.message(ManualPostStates.waiting_for_media_or_continue, F.text == "📸 Добавить фото")
-async def request_photo(message: Message, state: FSMContext):
+# ── обработка callback-кнопок во время ввода контента ────────────
+@router.callback_query(F.data == "add_photo")
+async def request_photo(call: CallbackQuery, state: FSMContext):
     logger.info("User requested to add photo")
-    await message.answer(
-        "📸 Отправьте фотографию.\nЕсли хотите заменить текст, добавьте подпись к фото.",
-        reply_markup=ReplyKeyboardRemove()
+    await call.message.edit_text(
+        "📸 Отправьте фотографию.\nЕсли хотите заменить текст, добавьте подпись к фото."
     )
     await state.set_state(ManualPostStates.waiting_for_content)
+    await call.answer()
 
-@router.message(ManualPostStates.waiting_for_media_or_continue, F.text == "⏱️ Далее (планирование)")
-async def show_publishing_options(message: Message, state: FSMContext):
+@router.callback_query(F.data == "proceed_to_planning")
+async def show_publishing_options(call: CallbackQuery, state: FSMContext):
     logger.info("User requested to proceed to planning")
+    data = await state.get_data()
+    text = data.get("text", "")
+    
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
-            [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")]
+            [InlineKeyboardButton(text="⏰ Запланировать публикацию", callback_data="manual_schedule")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_creation")],
         ]
     )
     
-    data = await state.get_data()
-    text = data.get("text", "")
-    text_preview = text[:100] + ('...' if len(text) > 100 else '') if text else "Без текста"
-    
-    await message.answer(
-        f"✅ Пост готов!\n\nТекст: {text_preview}\n\nВыберите действие:",
+    # Показываем текст поста
+    await call.message.edit_text(
+        f"📝 Предпросмотр текста:\n\n{text}\n\nВыберите действие:",
         reply_markup=kb
     )
+    
     await state.set_state(ManualPostStates.waiting_for_choice)
+    await call.answer()
 
-@router.message(ManualPostStates.waiting_for_media_or_continue, F.text == "❌ Отмена")
-async def cancel_creation(message: Message, state: FSMContext):
+@router.callback_query(F.data == "edit_text")
+async def edit_text_request(call: CallbackQuery, state: FSMContext):
+    logger.info("User requested to edit text")
+    await call.message.edit_text(
+        "✏️ Отправьте новый текст для поста:"
+    )
+    await state.set_state(ManualPostStates.waiting_for_content)
+    await call.answer()
+
+@router.callback_query(F.data == "edit_photo")
+async def edit_photo_request(call: CallbackQuery, state: FSMContext):
+    logger.info("User requested to edit photo")
+    await call.message.edit_text(
+        "🖼️ Отправьте новую фотографию для поста.\nЕсли хотите заменить текст, добавьте подпись к фото."
+    )
+    # Сохраним только текст, удалим старое фото
+    data = await state.get_data()
+    await state.update_data(text=data.get("text"), media_file_id=None)
+    await state.set_state(ManualPostStates.waiting_for_content)
+    await call.answer()
+
+@router.callback_query(F.data == "cancel_creation")
+async def cancel_creation(call: CallbackQuery, state: FSMContext):
     logger.info("User cancelled post creation")
     # Сохраняем данные о группе
     data = await state.get_data()
@@ -226,10 +245,9 @@ async def cancel_creation(message: Message, state: FSMContext):
     await state.clear()
     await state.set_data({"group_id": group_id, "group_title": group_title})
     
-    await message.answer(
-        "❌ Создание поста отменено.",
-        reply_markup=main_menu_kb()
-    )
+    await call.message.edit_text("❌ Создание поста отменено.")
+    await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    await call.answer()
 
 # ── публикация «сейчас» ────────────────────────────────────────
 @router.callback_query(F.data == "manual_publish_now")
@@ -300,6 +318,7 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
     await state.set_data({"group_id": group_pk, "group_title": group.title})
     
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    await call.answer()
 
 # ── запрос времени для планирования ───────────────────────────
 @router.callback_query(F.data == "manual_schedule")
@@ -312,6 +331,7 @@ async def schedule_choice(call: CallbackQuery, state: FSMContext):
         "📅 Введите дату и время публикации в формате ДД.MM.ГГГГ ЧЧ:ММ"
     )
     await state.set_state(ManualPostStates.waiting_for_datetime)
+    await call.answer()
 
 # ── ввод даты/времени ──────────────────────────────────────────
 @router.message(ManualPostStates.waiting_for_datetime)
@@ -332,6 +352,8 @@ async def input_datetime(message: Message, state: FSMContext):
     snippet = data.get("text", "")
     if len(snippet) > 50:
         snippet = snippet[:50] + "…"
+    
+    media_file_id = data.get("media_file_id")
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -339,10 +361,25 @@ async def input_datetime(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="❌ Отмена", callback_data="manual_cancel")],
         ]
     )
-    await message.answer(
-        f"Вы запланировали:\n\n{snippet}\n\n🕒 {dt:%d.%m.%Y %H:%M}\n\nПодтвердить?",
-        reply_markup=kb,
-    )
+    
+    # Если есть фото, показываем превью с фото
+    if media_file_id:
+        await message.answer_photo(
+            photo=media_file_id,
+            caption=f"📝 Предпросмотр запланированного поста:\n\n{snippet}{'...' if len(snippet) > 50 else ''}\n\n🕒 {dt:%d.%m.%Y %H:%M}",
+        )
+        
+        await message.answer(
+            "Подтвердить запланированную публикацию?",
+            reply_markup=kb
+        )
+    else:
+        # Если фото нет, показываем только текст
+        await message.answer(
+            f"Вы запланировали:\n\n{snippet}\n\n🕒 {dt:%d.%m.%Y %H:%M}\n\nПодтвердить?",
+            reply_markup=kb,
+        )
+    
     await state.set_state(ManualPostStates.waiting_for_confirm)
 
 # ── подтверждение планирования ─────────────────────────────────
@@ -384,6 +421,7 @@ async def confirm_manual(call: CallbackQuery, state: FSMContext):
     await state.set_data({"group_id": group_pk, "group_title": group.title})
     
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    await call.answer()
 
 # ── отмена ─────────────────────────────────────────────────────
 @router.callback_query(F.data == "manual_cancel")
@@ -400,3 +438,4 @@ async def cancel_manual(call: CallbackQuery, state: FSMContext):
     await state.set_data({"group_id": group_id, "group_title": group_title})
     
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    await call.answer()
