@@ -22,8 +22,9 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 # ── запуск сценария ────────────────────────────────────────────
-@router.message(lambda m: m.text and m.text.startswith("✏️ Создать пост"))
+@router.message(F.text.startswith("✏️ Создать пост"))
 async def start_manual(message: Message, state: FSMContext):
+    logger.info("Handler start_manual triggered with message: %s", message.text)
     data = await state.get_data()
     logger.info(f"Starting manual post with state data: {data}")
     
@@ -65,6 +66,7 @@ async def start_manual(message: Message, state: FSMContext):
 # ── обработка текста ───────────────────────────────────────────
 @router.message(ManualPostStates.waiting_for_content, F.text)
 async def handle_text(message: Message, state: FSMContext):
+    logger.info("Handling text in waiting_for_content state")
     data = await state.get_data()
     text = message.text
     media_file_id = data.get("media_file_id")
@@ -123,6 +125,7 @@ async def handle_text(message: Message, state: FSMContext):
 # ── обработка изображения ───────────────────────────────────────
 @router.message(ManualPostStates.waiting_for_content, F.photo)
 async def handle_photo(message: Message, state: FSMContext):
+    logger.info("Handling photo in waiting_for_content state")
     data = await state.get_data()
     file_id = message.photo[-1].file_id
     caption = message.caption or ""
@@ -154,6 +157,7 @@ async def handle_photo(message: Message, state: FSMContext):
 # ── обработка изображения на этапе ожидания медиа ──────────────
 @router.message(ManualPostStates.waiting_for_media_or_continue, F.photo)
 async def handle_photo_after_text(message: Message, state: FSMContext):
+    logger.info("Handling photo in waiting_for_media_or_continue state")
     data = await state.get_data()
     file_id = message.photo[-1].file_id
     caption = message.caption or ""
@@ -183,6 +187,7 @@ async def handle_photo_after_text(message: Message, state: FSMContext):
 # ── обработка кнопок во время ввода контента ────────────────────
 @router.message(ManualPostStates.waiting_for_media_or_continue, F.text == "📸 Добавить фото")
 async def request_photo(message: Message, state: FSMContext):
+    logger.info("User requested to add photo")
     await message.answer(
         "📸 Отправьте фотографию.\nЕсли хотите заменить текст, добавьте подпись к фото.",
         reply_markup=ReplyKeyboardRemove()
@@ -191,6 +196,7 @@ async def request_photo(message: Message, state: FSMContext):
 
 @router.message(ManualPostStates.waiting_for_media_or_continue, F.text == "⏱️ Далее (планирование)")
 async def show_publishing_options(message: Message, state: FSMContext):
+    logger.info("User requested to proceed to planning")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Опубликовать сразу", callback_data="manual_publish_now")],
@@ -210,6 +216,7 @@ async def show_publishing_options(message: Message, state: FSMContext):
 
 @router.message(ManualPostStates.waiting_for_media_or_continue, F.text == "❌ Отмена")
 async def cancel_creation(message: Message, state: FSMContext):
+    logger.info("User cancelled post creation")
     # Сохраняем данные о группе
     data = await state.get_data()
     group_id = data.get("group_id")
@@ -225,8 +232,9 @@ async def cancel_creation(message: Message, state: FSMContext):
     )
 
 # ── публикация «сейчас» ────────────────────────────────────────
-@router.callback_query(F.data == "manual_publish_now", ManualPostStates.waiting_for_choice)
+@router.callback_query(F.data == "manual_publish_now")
 async def publish_now(call: CallbackQuery, state: FSMContext):
+    logger.info("Publishing post now")
     data = await state.get_data()
     logger.info(f"Publishing post now with data: {data}")
     
@@ -294,8 +302,9 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
 
 # ── запрос времени для планирования ───────────────────────────
-@router.callback_query(F.data == "manual_schedule", ManualPostStates.waiting_for_choice)
+@router.callback_query(F.data == "manual_schedule")
 async def schedule_choice(call: CallbackQuery, state: FSMContext):
+    logger.info("User requested post scheduling")
     # Сохраним данные состояния перед переходом
     data = await state.get_data()
     
@@ -307,6 +316,7 @@ async def schedule_choice(call: CallbackQuery, state: FSMContext):
 # ── ввод даты/времени ──────────────────────────────────────────
 @router.message(ManualPostStates.waiting_for_datetime)
 async def input_datetime(message: Message, state: FSMContext):
+    logger.info(f"Processing date input: {message.text}")
     try:
         dt = datetime.strptime(message.text, "%d.%m.%Y %H:%M")
         dt = dt.replace(tzinfo=ZoneInfo("Europe/Moscow"))
@@ -336,8 +346,9 @@ async def input_datetime(message: Message, state: FSMContext):
     await state.set_state(ManualPostStates.waiting_for_confirm)
 
 # ── подтверждение планирования ─────────────────────────────────
-@router.callback_query(F.data == "manual_confirm", ManualPostStates.waiting_for_confirm)
+@router.callback_query(F.data == "manual_confirm")
 async def confirm_manual(call: CallbackQuery, state: FSMContext):
+    logger.info("Confirming scheduled post")
     data = await state.get_data()
     group_pk = data.get("group_id")
     media_file_id = data.get("media_file_id")
@@ -375,8 +386,9 @@ async def confirm_manual(call: CallbackQuery, state: FSMContext):
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
 
 # ── отмена ─────────────────────────────────────────────────────
-@router.callback_query(F.data == "manual_cancel", ManualPostStates.waiting_for_confirm)
+@router.callback_query(F.data == "manual_cancel")
 async def cancel_manual(call: CallbackQuery, state: FSMContext):
+    logger.info("Cancelling post scheduling")
     # Получаем текущие данные состояния
     data = await state.get_data()
     group_id = data.get("group_id")
