@@ -7,7 +7,6 @@ services:
       - .env
     volumes:
       - .:/app
-      # Монтируем базу данных отдельно, чтобы она сохранялась между перезапусками
-      - ./bot.db:/app/bot.db
+      # Исключаем перезапись базы данных
+      - /app/bot.db
     restart: unless-stopped
-    command: bash -c "python init_db.py && python bot.py"
