@@ -7,6 +7,4 @@ services:
       - .env
     volumes:
       - .:/app
-      # Исключаем перезапись базы данных
-      - /app/bot.db
     restart: unless-stopped

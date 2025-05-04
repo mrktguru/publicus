@@ -1,8 +1,3 @@
-# Сначала переименуем старый файл как резервную копию 
-mv handlers/group_select.py handlers/group_select.py.bak
-
-# Создадим новый файл с правильной кодировкой
-cat > handlers/group_select.py << 'EOF'
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
@@ -122,10 +117,3 @@ async def open_settings(call: CallbackQuery):
             call.from_user.id,
             "Произошла ошибка. Попробуйте снова или обратитесь к администратору бота."
         )
-EOF
-
-# Убедимся, что файл имеет правильные права
-chmod 644 handlers/group_select.py
-
-# Проверим содержимое файла
-cat handlers/group_select.py | head -5
