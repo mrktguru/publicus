@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, and_
 from datetime import datetime
 
-from database.db import SessionLocal
+from database.db import AsyncSessionLocal
 from database.models import Post, Group
 from keyboards.main import main_menu_kb
 
@@ -19,7 +19,7 @@ async def show_queue(message: Message, state: FSMContext):
     if not group_id:
         return await message.answer("❌ Сначала выберите группу через /start")
 
-    async with SessionLocal() as s:
+    async with AsyncSessionLocal() as s:
         group = await s.get(Group, group_id)
         if not group:
             return await message.answer("❌ Группа не найдена.")
