@@ -1,49 +1,79 @@
-import os
-import openai
+# gpt_client.py с использованием requests вместо httpx
+import requests
+import json
 from config import OPENAI_API_KEY
-
-# Устанавливаем API ключ
-openai.api_key = OPENAI_API_KEY
 
 async def generate_article(prompt: str) -> str:
     """
-    Генерирует текст статьи по заданному промпту, используя актуальное API OpenAI
+    Генерирует текст статьи по заданному промпту через прямой HTTP запрос к API OpenAI
     """
     try:
-        # Используем прямой вызов API без создания клиента
-        completion = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        }
+        
+        data = {
+            "model": "gpt-4",
+            "messages": [
                 {"role": "system", "content": "Ты пишешь короткие новостные статьи на русском языке."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=800
+            "temperature": 0.7,
+            "max_tokens": 800
+        }
+        
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=data
         )
-        return completion.choices[0].message.content
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        else:
+            print(f"Ошибка API: {response.status_code}, {response.text}")
+            return f"Не удалось сгенерировать контент: Ошибка API {response.status_code}"
+    
     except Exception as e:
         print(f"Ошибка при генерации текста: {str(e)}")
-        # Возвращаем сообщение об ошибке вместо того, чтобы прерывать выполнение
         return f"Не удалось сгенерировать контент: {str(e)}"
 
 
 async def generate_example_post(prompt: str) -> str:
     """
-    Генерирует пример поста для предпросмотра
+    Генерирует пример поста для предпросмотра через прямой HTTP запрос к API OpenAI
     """
     try:
-        # Используем прямой вызов API без создания клиента
-        completion = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        }
+        
+        data = {
+            "model": "gpt-4",
+            "messages": [
                 {"role": "system", "content": "Ты создаешь примеры контента для социальных сетей."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=500
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=data
         )
-        return completion.choices[0].message.content
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        else:
+            print(f"Ошибка API: {response.status_code}, {response.text}")
+            return f"Не удалось сгенерировать пример: Ошибка API {response.status_code}"
+    
     except Exception as e:
         print(f"Ошибка при генерации примера поста: {str(e)}")
-        # Возвращаем сообщение об ошибке вместо того, чтобы прерывать выполнение
         return f"Не удалось сгенерировать пример: {str(e)}"
