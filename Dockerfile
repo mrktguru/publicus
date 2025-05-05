@@ -17,3 +17,4 @@ ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # В вашем Dockerfile
 RUN pip install requests
+RUN pip install alembic
