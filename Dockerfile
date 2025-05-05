@@ -14,3 +14,6 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 # Запускаем через entrypoint
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# В вашем Dockerfile
+RUN pip install requests
