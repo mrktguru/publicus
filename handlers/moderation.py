@@ -11,7 +11,7 @@ router = Router()
 @router.callback_query(F.data.startswith("moderate_"))
 async def moderate_post(call: CallbackQuery):
     _, action, post_id = call.data.split("_")
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session: 
         post = await session.get(GeneratedPost, int(post_id))
         if not post:
             await call.answer("Пост не найден.")
