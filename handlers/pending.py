@@ -13,7 +13,7 @@ router = Router()
 
 @router.message(lambda m: m.text and m.text.startswith("🕓 Ожидают публикации"))
 async def show_pending(message: Message, state: FSMContext):
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         posts = (
             await session.execute(
                 select(GeneratedPost)
@@ -54,7 +54,7 @@ async def show_pending(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("mod_"))
 async def moderate(call: CallbackQuery):
     action, post_id = call.data.split("_")[1:]  # appr / rej, id
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         post = await session.get(GeneratedPost, int(post_id))
         if not post:
             await call.answer("Пост не найден.")
