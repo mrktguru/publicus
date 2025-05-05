@@ -51,6 +51,13 @@ async def start_manual(message: Message, state: FSMContext):
     # Очищаем предыдущее состояние, если оно было
     await state.update_data(text=None, media_file_id=None)
     
+    # Создаем инлайн-кнопку "Отменить создание"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отменить создание", callback_data="cancel_creation")],
+        ]
+    )
+    
     # Переходим к вводу текста поста и скрываем клавиатуру
     await state.set_state(ManualPostStates.waiting_for_content)
     await message.answer(
@@ -59,7 +66,7 @@ async def start_manual(message: Message, state: FSMContext):
         "• Отправить только текст\n"
         "• Отправить фото с подписью\n"
         "• Отправить текст, а затем фото (я объединю их)",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=kb  # Добавляем инлайн-кнопку
     )
 
 # ── обработка текста ───────────────────────────────────────────
