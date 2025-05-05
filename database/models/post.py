@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, String, Boolean
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, String, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -29,7 +29,7 @@ class Post(Base):
     # автор (user_id Telegram) — как BigInt
     created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
-    # “draft” | “scheduled” | “sent” …
+    # "draft" | "scheduled" | "sent" …
     status: Mapped[str] = mapped_column(String(20), default="draft")
 
     created_at: Mapped[datetime] = mapped_column(
@@ -37,6 +37,12 @@ class Post(Base):
     )
 
     published: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Новые поля для улучшенной автогенерации и модерации
+    is_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    template_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    generation_params: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON с параметрами
+    rejection_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # --- примеры связей -------------------------------------------------
     # group      = relationship("Group", back_populates="posts", lazy="joined")
