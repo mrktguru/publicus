@@ -1,19 +1,17 @@
+import os
 import openai
 from config import OPENAI_API_KEY
-from openai import OpenAI
 
-# Создаем клиента OpenAI с минимальными необходимыми параметрами
-client = OpenAI(
-    api_key=OPENAI_API_KEY
-    # Убираем параметр proxies, который вызывает ошибку
-)
+# Устанавливаем API ключ
+openai.api_key = OPENAI_API_KEY
 
 async def generate_article(prompt: str) -> str:
     """
     Генерирует текст статьи по заданному промпту, используя актуальное API OpenAI
     """
     try:
-        response = client.chat.completions.create(
+        # Используем прямой вызов API без создания клиента
+        completion = openai.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "Ты пишешь короткие новостные статьи на русском языке."},
@@ -22,11 +20,11 @@ async def generate_article(prompt: str) -> str:
             temperature=0.7,
             max_tokens=800
         )
-        return response.choices[0].message.content
+        return completion.choices[0].message.content
     except Exception as e:
-        # Добавляем обработку ошибок
         print(f"Ошибка при генерации текста: {str(e)}")
-        raise e
+        # Возвращаем сообщение об ошибке вместо того, чтобы прерывать выполнение
+        return f"Не удалось сгенерировать контент: {str(e)}"
 
 
 async def generate_example_post(prompt: str) -> str:
@@ -34,7 +32,8 @@ async def generate_example_post(prompt: str) -> str:
     Генерирует пример поста для предпросмотра
     """
     try:
-        response = client.chat.completions.create(
+        # Используем прямой вызов API без создания клиента
+        completion = openai.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "Ты создаешь примеры контента для социальных сетей."},
@@ -43,8 +42,8 @@ async def generate_example_post(prompt: str) -> str:
             temperature=0.7,
             max_tokens=500
         )
-        return response.choices[0].message.content
+        return completion.choices[0].message.content
     except Exception as e:
-        # Добавляем обработку ошибок
         print(f"Ошибка при генерации примера поста: {str(e)}")
-        raise e
+        # Возвращаем сообщение об ошибке вместо того, чтобы прерывать выполнение
+        return f"Не удалось сгенерировать пример: {str(e)}"
