@@ -1,7 +1,8 @@
-# gpt_client.py с использованием requests вместо httpx
+# gpt_client.py с оптимизированным использованием контекста для разных режимов
 import requests
 import json
 from config import OPENAI_API_KEY
+from utils.prompt_manager import SYSTEM_CONTEXT
 
 async def generate_article(prompt: str) -> str:
     """
@@ -16,11 +17,11 @@ async def generate_article(prompt: str) -> str:
         data = {
             "model": "gpt-4",
             "messages": [
-                {"role": "system", "content": "Ты пишешь короткие новостные статьи на русском языке."},
+                {"role": "system", "content": SYSTEM_CONTEXT},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,
-            "max_tokens": 800
+            "max_tokens": 1000
         }
         
         response = requests.post(
