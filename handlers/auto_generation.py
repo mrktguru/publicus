@@ -44,7 +44,7 @@ class AutoGenStates(StatesGroup):
     schedule_date = State()
 
 
-@router.message(lambda m: m.text and m.text.startswith("🤖 С помощью ИИ"))
+@router.message(lambda m: m.text and m.text.startswith("🤖 Автогенерация постов"))
 async def start_auto_gen(message: Message, state: FSMContext):
     """Начальный обработчик для генерации поста с помощью ИИ"""
     # Получаем текущую выбранную группу
