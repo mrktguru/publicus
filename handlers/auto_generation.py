@@ -1,11 +1,10 @@
-# handlers/auto_generation.py (Часть 1: Импорты, настройки и определение состояний)
+# handlers/auto_generation.py
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import json
-from datetime import datetime, timezone
-import asyncio
+from datetime import datetime, timezone, timedelta
 import logging
 from sqlalchemy import select
 
@@ -26,28 +25,28 @@ class AutoGenStates(StatesGroup):
     mode_selection = State()
     
     # Состояния для режима BASIC
-    blog_topic = State()  # Новое состояние для выбора тематики блога
+    blog_topic = State()
     content_type = State()
     themes = State()
     tone = State()
     structure = State()
     length = State()
-    post_count = State()
-    preview = State()
-    moderation = State()
-    confirmation = State()
+    generated_post = State()  # Новое состояние - результат генерации
     
     # Состояния для режима PRO
     pro_prompt = State()
-    pro_preview = State()
-    pro_post_count = State()
-    pro_moderation = State()
-    pro_confirmation = State()
+    pro_generated_post = State()  # Новое состояние - результат генерации для PRO
+    
+    # Общие состояния для работы с постом
+    edit_post = State()
+    schedule_post = State()
+    schedule_time = State()
+    schedule_date = State()
 
 
-@router.message(lambda m: m.text and m.text.startswith("🤖 Автогенерация постов"))
+@router.message(lambda m: m.text and m.text.startswith("🤖 С помощью ИИ"))
 async def start_auto_gen(message: Message, state: FSMContext):
-    """Начальный обработчик для автогенерации постов"""
+    """Начальный обработчик для генерации поста с помощью ИИ"""
     # Получаем текущую выбранную группу
     user_data = await state.get_data()
     group_id = user_data.get("group_id")
@@ -92,7 +91,7 @@ async def start_auto_gen(message: Message, state: FSMContext):
 
 @router.callback_query(AutoGenStates.mode_selection)
 async def process_mode_selection(call: CallbackQuery, state: FSMContext):
-    """Обработчик выбора режима автогенерации"""
+    """Обработчик выбора режима генерации"""
     mode = call.data.split("_")[1]
     
     if mode == "basic":
@@ -123,9 +122,6 @@ async def process_mode_selection(call: CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
         await state.set_state(AutoGenStates.pro_prompt)
-
-# handlers/auto_generation.py (Часть 2: Обработчики BASIC режима)
-
 # ------------------ BASIC MODE HANDLERS ------------------
 
 @router.callback_query(AutoGenStates.blog_topic, F.data.startswith("blog_"))
@@ -315,225 +311,52 @@ async def process_length(call: CallbackQuery, state: FSMContext):
     # Сохраняем длину
     await state.update_data(length_code=length_code, length_name=length_name)
     
-    await call.message.edit_text(
-        f"✅ Выбрана длина: {length_name}\n\n"
-        f"Шаг 7: Введите количество постов для генерации (от 1 до 30):"
-    )
+    await call.message.edit_text("⏳ Генерируем пост на основе выбранных параметров...")
     
-    await state.set_state(AutoGenStates.post_count)
-
-
-@router.message(AutoGenStates.post_count)
-async def process_post_count(message: Message, state: FSMContext):
-    """Обработка ввода количества постов"""
-    try:
-        count = int(message.text.strip())
-        if count < 1:
-            count = 1
-        elif count > 30:
-            count = 30
-    except ValueError:
-        count = 5  # По умолчанию
-    
-    # Сохраняем количество
-    await state.update_data(post_count=count)
-    
-    # Генерируем пример поста
+    # Генерируем пост
     user_data = await state.get_data()
-    
-    await message.answer("⏳ Генерируем пример поста на основе выбранных параметров...")
     
     try:
         # Формируем промпт по параметрам
         prompt = build_basic_prompt(user_data)
         
-        # Генерируем пример поста
-        example_text = await generate_article(prompt)
+        # Генерируем пост
+        generated_text = await generate_article(prompt)
         
-        # Сохраняем пример поста
-        await state.update_data(example_text=example_text)
+        # Сохраняем сгенерированный текст
+        await state.update_data(generated_text=generated_text, generation_mode="BASIC")
         
-        # Создаем клавиатуру для подтверждения
+        # Показываем результат с кнопками действий
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Всё верно", callback_data="preview_ok")],
-            [InlineKeyboardButton(text="🔄 Сгенерировать другой пример", callback_data="preview_regen")],
-            [InlineKeyboardButton(text="⬅️ Вернуться к настройкам", callback_data="preview_back")]
+            [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+            [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+            [InlineKeyboardButton(text="✏️ Редактировать", callback_data="post_edit")],
+            [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+            [InlineKeyboardButton(text="🔧 Изменить параметры", callback_data="post_change_params")]
         ])
         
-        await message.answer(
-            f"📝 Пример поста на основе выбранных параметров:\n\n"
-            f"{example_text}\n\n"
-            f"Вас устраивает этот формат?",
+        await call.message.edit_text(
+            f"✅ Пост сгенерирован!\n\n"
+            f"{generated_text}\n\n"
+            f"Выберите действие:",
             reply_markup=markup
         )
         
-        await state.set_state(AutoGenStates.preview)
-    
+        await state.set_state(AutoGenStates.generated_post)
+        
     except Exception as e:
-        logger.error(f"Error generating preview: {e}")
-        await message.answer(
-            f"❌ Не удалось сгенерировать пример поста.\n"
-            f"Пожалуйста, попробуйте еще раз или измените параметры."
-        )
-        # Возвращаемся к выбору количества постов
-        await state.set_state(AutoGenStates.post_count)
-
-
-@router.callback_query(AutoGenStates.preview)
-async def process_preview_action(call: CallbackQuery, state: FSMContext):
-    """Обработка действий с предпросмотром"""
-    action = call.data.split("_")[1]
-    
-    if action == "ok":
-        # Переходим к настройке премодерации
+        logger.error(f"Error generating post: {str(e)}")
+        
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Да", callback_data="mod_yes")],
-            [InlineKeyboardButton(text="❌ Нет", callback_data="mod_no")]
+            [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="regenerate_basic")],
+            [InlineKeyboardButton(text="⬅️ Вернуться к параметрам", callback_data="back_to_params")]
         ])
         
         await call.message.edit_text(
-            "Шаг 8: Включить премодерацию постов?\n\n"
-            "При включенной премодерации каждый пост будет требовать вашего одобрения перед публикацией.",
+            f"❌ Произошла ошибка при генерации поста: {str(e)}\n\n"
+            f"Что делать дальше?",
             reply_markup=markup
         )
-        
-        await state.set_state(AutoGenStates.moderation)
-    
-    elif action == "regen":
-        # Регенерируем пример
-        user_data = await state.get_data()
-        
-        await call.message.edit_text("⏳ Генерируем новый пример поста...")
-        
-        try:
-            # Формируем промпт по параметрам
-            prompt = build_basic_prompt(user_data)
-            
-            # Добавляем указание на другой вариант
-            prompt += " Создай другой вариант поста, отличающийся от предыдущего."
-            
-            # Генерируем новый пример поста
-            new_example_text = await generate_article(prompt)
-            
-            # Сохраняем новый пример поста
-            await state.update_data(example_text=new_example_text)
-            
-            # Создаем клавиатуру для подтверждения
-            markup = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Всё верно", callback_data="preview_ok")],
-                [InlineKeyboardButton(text="🔄 Сгенерировать другой пример", callback_data="preview_regen")],
-                [InlineKeyboardButton(text="⬅️ Вернуться к настройкам", callback_data="preview_back")]
-            ])
-            
-            await call.message.edit_text(
-                f"📝 Новый пример поста:\n\n"
-                f"{new_example_text}\n\n"
-                f"Вас устраивает этот формат?",
-                reply_markup=markup
-            )
-        
-        except Exception as e:
-            logger.error(f"Error regenerating preview: {e}")
-            await call.message.edit_text(
-                f"❌ Не удалось сгенерировать новый пример поста.\n"
-                f"Пожалуйста, попробуйте еще раз."
-            )
-            
-            # Восстанавливаем клавиатуру
-            markup = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Всё верно", callback_data="preview_ok")],
-                [InlineKeyboardButton(text="🔄 Сгенерировать другой пример", callback_data="preview_regen")],
-                [InlineKeyboardButton(text="⬅️ Вернуться к настройкам", callback_data="preview_back")]
-            ])
-            
-            await call.message.edit_reply_markup(reply_markup=markup)
-    
-    elif action == "back":
-        # Возвращаемся к началу настройки
-        await start_auto_gen(call.message, state)
-
-
-@router.callback_query(AutoGenStates.moderation)
-async def process_moderation_choice(call: CallbackQuery, state: FSMContext):
-    """Обработка выбора премодерации"""
-    mod_enabled = call.data == "mod_yes"
-    
-    # Сохраняем выбор премодерации
-    await state.update_data(moderation_enabled=mod_enabled)
-    
-    # Формируем сводку параметров
-    user_data = await state.get_data()
-    
-    # Преобразуем структуру в текстовый формат
-    selected_structure = [name for code, name in STRUCTURE_OPTIONS.items() 
-                         if user_data["structure"].get(code, False)]
-    structure_text = ", ".join(selected_structure)
-    
-    summary = (
-        f"📋 Сводка настроек автогенерации:\n\n"
-        f"📌 Тематика блога: {user_data['blog_topic_name']}\n"
-        f"📌 Тип контента: {user_data['content_type_name']}\n"
-        f"📌 Тема: {user_data['themes']}\n"
-        f"📌 Тон: {user_data['tone_name']}\n"
-        f"📌 Структура: {structure_text}\n"
-        f"📌 Длина: {user_data['length_name']}\n"
-        f"📌 Количество постов: {user_data['post_count']}\n"
-        f"📌 Премодерация: {'✅ Включена' if mod_enabled else '❌ Отключена'}\n\n"
-        f"Пример поста:\n{user_data['example_text'][:200]}..."
-    )
-    
-    # Клавиатура для подтверждения
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить и запустить", callback_data="template_confirm")],
-        [InlineKeyboardButton(text="❌ Отменить", callback_data="template_cancel")]
-    ])
-    
-    await call.message.edit_text(
-        f"{summary}\n\n"
-        f"Запустить генерацию с этими параметрами?",
-        reply_markup=markup
-    )
-    
-    await state.set_state(AutoGenStates.confirmation)
-
-
-@router.callback_query(AutoGenStates.confirmation)
-async def process_final_confirmation(call: CallbackQuery, state: FSMContext):
-    """Обработка финального подтверждения BASIC режима"""
-    if call.data == "template_confirm":
-        # Получаем данные из состояния
-        user_data = await state.get_data()
-        
-        await call.message.edit_text(
-            "✅ Параметры настроены!\n\n"
-            "⏳ Начинаем генерацию постов. Это может занять некоторое время.\n"
-            "Вы получите уведомление, когда посты будут готовы."
-        )
-        
-        # Запускаем процесс генерации в фоне
-        asyncio.create_task(
-            generate_posts_with_basic_prompt(
-                chat_id=user_data.get("chat_id"),
-                user_id=call.from_user.id,
-                params=user_data,
-                post_count=user_data["post_count"],
-                moderation_enabled=user_data["moderation_enabled"],
-                bot=call.bot
-            )
-        )
-        
-        # Очищаем состояние
-        await state.clear()
-    
-    else:  # template_cancel
-        await call.message.edit_text(
-            "❌ Настройка автогенерации отменена.\n"
-            "Вы можете начать настройку заново или вернуться в главное меню."
-        )
-        await state.clear()
-
-# handlers/auto_generation.py (Часть 3: Обработчики PRO режима и функции генерации)
-
 # ------------------ PRO MODE HANDLERS ------------------
 
 @router.message(AutoGenStates.pro_prompt)
@@ -553,424 +376,564 @@ async def process_pro_prompt(message: Message, state: FSMContext):
     # Сохраняем промпт
     await state.update_data(pro_prompt=prompt_text)
     
-    # Запрос количества постов
-    await message.answer(
-        "✅ Промпт принят!\n\n"
-        "Сколько постов вы хотите сгенерировать? (от 1 до 30):"
-    )
-    
-    await state.set_state(AutoGenStates.pro_post_count)
-
-
-@router.message(AutoGenStates.pro_post_count)
-async def process_pro_post_count(message: Message, state: FSMContext):
-    """Обработка ввода количества постов для PRO режима"""
-    try:
-        count = int(message.text.strip())
-        if count < 1:
-            count = 1
-        elif count > 30:
-            count = 30
-    except ValueError:
-        count = 1  # По умолчанию
-    
-    # Сохраняем количество
-    await state.update_data(post_count=count)
-    
-    # Генерируем пример поста
-    user_data = await state.get_data()
-    pro_prompt = user_data.get("pro_prompt", "")
-    
-    await message.answer("⏳ Генерируем пример поста на основе вашего промпта...")
+    await message.answer("⏳ Генерируем пост на основе вашего промпта...")
     
     try:
         # Генерируем пример
-        example_text = await generate_article(pro_prompt)
+        generated_text = await generate_article(prompt_text)
         
-        # Сохраняем пример
-        await state.update_data(example_text=example_text)
+        # Сохраняем сгенерированный текст
+        await state.update_data(generated_text=generated_text, generation_mode="PRO")
         
-        # Кнопки для выбора действия
+        # Показываем результат с кнопками действий
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Всё верно", callback_data="pro_preview_ok")],
-            [InlineKeyboardButton(text="🔄 Сгенерировать другой", callback_data="pro_preview_regen")],
-            [InlineKeyboardButton(text="📝 Изменить промпт", callback_data="pro_preview_edit")]
+            [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+            [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+            [InlineKeyboardButton(text="✏️ Редактировать", callback_data="post_edit")],
+            [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+            [InlineKeyboardButton(text="📝 Изменить промпт", callback_data="post_change_prompt")]
         ])
         
         await message.answer(
-            f"📝 Пример поста на основе вашего промпта:\n\n"
-            f"{example_text}\n\n"
-            f"Вас устраивает этот результат?",
+            f"✅ Пост сгенерирован!\n\n"
+            f"{generated_text}\n\n"
+            f"Выберите действие:",
             reply_markup=markup
         )
         
-        await state.set_state(AutoGenStates.pro_preview)
+        await state.set_state(AutoGenStates.pro_generated_post)
         
     except Exception as e:
-        logger.error(f"Error generating preview: {e}")
+        logger.error(f"Error generating post in PRO mode: {str(e)}")
         await message.answer(
-            "❌ Не удалось сгенерировать пример поста.\n"
-            "Пожалуйста, попробуйте другой промпт или обратитесь к администратору."
+            f"❌ Произошла ошибка при генерации поста: {str(e)}\n\n"
+            f"Пожалуйста, попробуйте другой промпт или обратитесь к администратору."
         )
         await state.set_state(AutoGenStates.pro_prompt)
+# ------------------ ОБЩИЕ ДЕЙСТВИЯ С ПОСТОМ ------------------
+
+# Обработка действий с сгенерированным постом в режиме BASIC
+@router.callback_query(AutoGenStates.generated_post)
+async def process_post_action_basic(call: CallbackQuery, state: FSMContext):
+    await process_post_action(call, state)
 
 
-@router.callback_query(AutoGenStates.pro_preview)
-async def process_pro_preview_action(call: CallbackQuery, state: FSMContext):
-    """Обработка действий с предпросмотром в PRO режиме"""
-    action = call.data.split("_")[2]
+# Обработка действий с сгенерированным постом в режиме PRO
+@router.callback_query(AutoGenStates.pro_generated_post)
+async def process_post_action_pro(call: CallbackQuery, state: FSMContext):
+    await process_post_action(call, state)
+
+
+async def process_post_action(call: CallbackQuery, state: FSMContext):
+    """Обработчик действий с сгенерированным постом"""
+    action = call.data.split("_", 1)[1]
+    user_data = await state.get_data()
+    generation_mode = user_data.get("generation_mode", "BASIC")
     
-    if action == "ok":
-        # Настройка премодерации
+    if action == "publish_now":
+        # Публикуем пост прямо сейчас
+        await publish_post_now(call, state)
+        
+    elif action == "schedule":
+        # Запрашиваем дату публикации
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        day_after = today + timedelta(days=2)
+        
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Да", callback_data="pro_mod_yes")],
-            [InlineKeyboardButton(text="❌ Нет", callback_data="pro_mod_no")]
+            [InlineKeyboardButton(text="Сегодня", callback_data=f"date_{today.isoformat()}")],
+            [InlineKeyboardButton(text="Завтра", callback_data=f"date_{tomorrow.isoformat()}")],
+            [InlineKeyboardButton(text="Послезавтра", callback_data=f"date_{day_after.isoformat()}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_post")]
         ])
         
         await call.message.edit_text(
-            "Включить премодерацию постов?\n\n"
-            "При включенной премодерации каждый пост будет требовать вашего одобрения перед публикацией.",
+            "📆 Выберите дату публикации:",
             reply_markup=markup
         )
         
-        await state.set_state(AutoGenStates.pro_moderation)
+        await state.set_state(AutoGenStates.schedule_date)
+    elif action == "edit":
+        # Отправляем текст для редактирования с инструкциями
+        await call.message.edit_text(
+            "✏️ <b>Редактирование поста</b>\n\n"
+            "Текущий текст поста:\n"
+            f"{user_data.get('generated_text', '')}\n\n"
+            "📝 <b>Отправьте отредактированный текст в следующем сообщении.</b>\n\n"
+            "Вы можете использовать форматирование Telegram:\n"
+            "- *жирный текст* (между звездочками)\n"
+            "- _курсив_ (между нижними подчеркиваниями)\n"
+            "- `код` (между обратными кавычками)\n"
+            "- [текст ссылки](URL) (ссылки)",
+            parse_mode="HTML"
+        )
         
-    elif action == "regen":
-        # Регенерируем пример
-        user_data = await state.get_data()
-        pro_prompt = user_data.get("pro_prompt", "")
+        await state.set_state(AutoGenStates.edit_post)
         
-        await call.message.edit_text("⏳ Генерируем новый пример поста...")
+    elif action == "regenerate":
+        # Регенерируем пост
+        await call.message.edit_text("⏳ Генерируем новый вариант поста...")
         
         try:
-            # Генерируем новый пример
-            new_example = await generate_article(pro_prompt)
+            if generation_mode == "BASIC":
+                # Для BASIC используем построенный промпт
+                prompt = build_basic_prompt(user_data)
+                prompt += " Создай совершенно другой вариант поста."
+            else:
+                # Для PRO используем готовый промпт
+                prompt = user_data.get("pro_prompt", "")
+                prompt += " Создай совершенно другой вариант."
             
-            # Сохраняем новый пример
-            await state.update_data(example_text=new_example)
+            # Генерируем новый пост
+            generated_text = await generate_article(prompt)
             
-            # Обновляем сообщение
+            # Сохраняем новый текст
+            await state.update_data(generated_text=generated_text)
+            
+            # Показываем новый пост с кнопками
             markup = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Всё верно", callback_data="pro_preview_ok")],
-                [InlineKeyboardButton(text="🔄 Сгенерировать другой", callback_data="pro_preview_regen")],
-                [InlineKeyboardButton(text="📝 Изменить промпт", callback_data="pro_preview_edit")]
+                [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+                [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+                [InlineKeyboardButton(text="✏️ Редактировать", callback_data="post_edit")],
+                [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+                [InlineKeyboardButton(
+                    text="🔧 Изменить параметры" if generation_mode == "BASIC" else "📝 Изменить промпт",
+                    callback_data="post_change_params" if generation_mode == "BASIC" else "post_change_prompt"
+                )]
             ])
             
             await call.message.edit_text(
-                f"📝 Новый пример поста:\n\n"
-                f"{new_example}\n\n"
-                f"Вас устраивает этот результат?",
+                f"✅ Новый пост сгенерирован!\n\n"
+                f"{generated_text}\n\n"
+                f"Выберите действие:",
                 reply_markup=markup
             )
             
         except Exception as e:
-            logger.error(f"Error regenerating preview: {e}")
-            await call.message.edit_text(
-                "❌ Не удалось сгенерировать новый пример поста.\n"
-                "Пожалуйста, попробуйте другой промпт или обратитесь к администратору.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📝 Изменить промпт", callback_data="pro_preview_edit")]
-                ])
-            )
+            logger.error(f"Error regenerating post: {str(e)}")
             
-    elif action == "edit":
-        # Возврат к редактированию промпта
-        user_data = await state.get_data()
+            markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="post_regenerate")],
+                [InlineKeyboardButton(text="⬅️ Назад к посту", callback_data="back_to_post")]
+            ])
+            
+            await call.message.edit_text(
+                f"❌ Произошла ошибка при генерации нового варианта: {str(e)}\n\n"
+                f"Что делать дальше?",
+                reply_markup=markup
+            )
+    elif action == "change_params":
+        # Возвращаемся к выбору параметров в режиме BASIC
+        await call.message.edit_text(
+            "🔄 Возвращаемся к настройке параметров..."
+        )
+        
+        # Возвращаемся к первому шагу BASIC
+        kb = []
+        for code, name in BLOG_TOPICS.items():
+            kb.append([InlineKeyboardButton(text=name, callback_data=f"blog_{code}")])
+        
+        markup = InlineKeyboardMarkup(inline_keyboard=kb)
+        
+        await call.message.edit_text(
+            "Выбран режим <b>Конструктор (BASIC)</b>\n\n"
+            "Шаг 1: Выберите основную тематику блога:",
+            parse_mode="HTML",
+            reply_markup=markup
+        )
+        await state.set_state(AutoGenStates.blog_topic)
+    
+    elif action == "change_prompt":
+        # Возвращаемся к вводу промпта в режиме PRO
         old_prompt = user_data.get("pro_prompt", "")
         
         await call.message.edit_text(
-            "Отредактируйте свой промпт и отправьте снова:\n\n"
-            f"Текущий промпт:\n{old_prompt}"
+            "Выбран режим <b>Свой промпт (PRO)</b>\n\n"
+            "Измените промпт и отправьте его снова:\n\n"
+            f"<b>Текущий промпт:</b>\n{old_prompt}\n\n"
+            "<i>Напишите новый промпт в ответном сообщении</i>",
+            parse_mode="HTML"
         )
-        
         await state.set_state(AutoGenStates.pro_prompt)
 
 
-@router.callback_query(AutoGenStates.pro_moderation)
-async def process_pro_moderation_choice(call: CallbackQuery, state: FSMContext):
-    """Обработка выбора премодерации в PRO режиме"""
-    mod_enabled = call.data == "pro_mod_yes"
+@router.message(AutoGenStates.edit_post)
+async def process_edited_post(message: Message, state: FSMContext):
+    """Обработка отредактированного поста"""
+    edited_text = message.text.strip()
     
-    # Сохраняем выбор премодерации
-    await state.update_data(moderation_enabled=mod_enabled)
+    if not edited_text:
+        await message.answer(
+            "❌ Текст поста не может быть пустым. Пожалуйста, введите текст:"
+        )
+        return
     
-    # Формируем сводку параметров
+    # Сохраняем отредактированный текст
+    await state.update_data(generated_text=edited_text)
     user_data = await state.get_data()
+    generation_mode = user_data.get("generation_mode", "BASIC")
     
-    summary = (
-        f"📋 Сводка настроек:\n\n"
-        f"📌 Режим: PRO (свой промпт)\n"
-        f"📌 Промпт: {user_data.get('pro_prompt', '')[:100]}...\n"
-        f"📌 Количество постов: {user_data.get('post_count', 1)}\n"
-        f"📌 Премодерация: {'✅ Включена' if mod_enabled else '❌ Отключена'}\n\n"
-        f"Пример поста:\n{user_data.get('example_text', '')[:200]}..."
-    )
-    
-    # Клавиатура для подтверждения
+    # Показываем отредактированный пост с кнопками действий
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить и запустить", callback_data="pro_confirm")],
-        [InlineKeyboardButton(text="❌ Отменить", callback_data="pro_cancel")]
+        [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+        [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+        [InlineKeyboardButton(text="✏️ Редактировать еще", callback_data="post_edit")],
+        [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+        [InlineKeyboardButton(
+            text="🔧 Изменить параметры" if generation_mode == "BASIC" else "📝 Изменить промпт",
+            callback_data="post_change_params" if generation_mode == "BASIC" else "post_change_prompt"
+        )]
     ])
     
+    await message.answer(
+        f"✅ Пост отредактирован!\n\n"
+        f"{edited_text}\n\n"
+        f"Выберите действие:",
+        reply_markup=markup,
+        parse_mode="HTML"  # Поддержка форматирования в отредактированном тексте
+    )
+    
+    # Возвращаемся к соответствующему состоянию в зависимости от режима
+    if generation_mode == "BASIC":
+        await state.set_state(AutoGenStates.generated_post)
+    else:
+        await state.set_state(AutoGenStates.pro_generated_post)
+@router.callback_query(AutoGenStates.schedule_date)
+async def process_schedule_date(call: CallbackQuery, state: FSMContext):
+    """Обработка выбора даты для планирования публикации"""
+    if call.data == "back_to_post":
+        # Возвращаемся к посту
+        user_data = await state.get_data()
+        generation_mode = user_data.get("generation_mode", "BASIC")
+        generated_text = user_data.get("generated_text", "")
+        
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+            [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+            [InlineKeyboardButton(text="✏️ Редактировать", callback_data="post_edit")],
+            [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+            [InlineKeyboardButton(
+                text="🔧 Изменить параметры" if generation_mode == "BASIC" else "📝 Изменить промпт",
+                callback_data="post_change_params" if generation_mode == "BASIC" else "post_change_prompt"
+            )]
+        ])
+        
+        await call.message.edit_text(
+            f"Сгенерированный пост:\n\n"
+            f"{generated_text}\n\n"
+            f"Выберите действие:",
+            reply_markup=markup
+        )
+        
+        # Возвращаемся к соответствующему состоянию
+        if generation_mode == "BASIC":
+            await state.set_state(AutoGenStates.generated_post)
+        else:
+            await state.set_state(AutoGenStates.pro_generated_post)
+        
+        return
+    
+    # Обрабатываем выбор даты
+    date_str = call.data.split("_")[1]
+    selected_date = datetime.fromisoformat(date_str).date()
+    
+    # Сохраняем выбранную дату
+    await state.update_data(selected_date=date_str)
+    
+    # Предлагаем выбрать время
+    current_hour = datetime.now().hour
+    
+    # Создаем кнопки для выбора времени с шагом в 1 час
+    time_kb = []
+    for hour in range(current_hour, current_hour + 12):
+        actual_hour = hour % 24
+        time_kb.append([
+            InlineKeyboardButton(
+                text=f"{actual_hour:02d}:00", 
+                callback_data=f"time_{actual_hour:02d}00"
+            ),
+            InlineKeyboardButton(
+                text=f"{actual_hour:02d}:30", 
+                callback_data=f"time_{actual_hour:02d}30"
+            )
+        ])
+    
+    time_kb.append([InlineKeyboardButton(text="⬅️ Назад к выбору даты", callback_data="back_to_date")])
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=time_kb)
+    
     await call.message.edit_text(
-        f"{summary}\n\n"
-        f"Запустить генерацию с этими параметрами?",
+        f"📆 Выбрана дата: {selected_date.strftime('%d.%m.%Y')}\n\n"
+        f"⏰ Выберите время публикации:",
         reply_markup=markup
     )
     
-    await state.set_state(AutoGenStates.pro_confirmation)
+    await state.set_state(AutoGenStates.schedule_time)
 
 
-@router.callback_query(AutoGenStates.pro_confirmation)
-async def process_pro_final_confirmation(call: CallbackQuery, state: FSMContext):
-    """Обработка финального подтверждения PRO режима"""
-    if call.data == "pro_confirm":
-        # Получаем данные из состояния
-        user_data = await state.get_data()
+@router.callback_query(AutoGenStates.schedule_time)
+async def process_schedule_time(call: CallbackQuery, state: FSMContext):
+    """Обработка выбора времени для планирования публикации"""
+    if call.data == "back_to_date":
+        # Возвращаемся к выбору даты
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        day_after = today + timedelta(days=2)
+        
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Сегодня", callback_data=f"date_{today.isoformat()}")],
+            [InlineKeyboardButton(text="Завтра", callback_data=f"date_{tomorrow.isoformat()}")],
+            [InlineKeyboardButton(text="Послезавтра", callback_data=f"date_{day_after.isoformat()}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_post")]
+        ])
         
         await call.message.edit_text(
-            "✅ Параметры настроены!\n\n"
-            "⏳ Начинаем генерацию постов. Это может занять некоторое время.\n"
-            "Вы получите уведомление, когда посты будут готовы."
+            "📆 Выберите дату публикации:",
+            reply_markup=markup
         )
         
-        # Запускаем процесс генерации в фоне
-        asyncio.create_task(
-            generate_posts_with_pro_prompt(
-                chat_id=user_data.get("chat_id"),
-                user_id=call.from_user.id,
-                prompt=user_data.get("pro_prompt", ""),
-                post_count=user_data.get("post_count", 1),
-                moderation_enabled=user_data.get("moderation_enabled", True),
-                bot=call.bot
+        await state.set_state(AutoGenStates.schedule_date)
+        return
+    
+    # Обрабатываем выбор времени
+    time_str = call.data.split("_")[1]
+    hour = int(time_str[:2])
+    minute = int(time_str[2:])
+    
+    user_data = await state.get_data()
+    date_str = user_data.get("selected_date")
+    selected_date = datetime.fromisoformat(date_str).date()
+    
+    # Создаем полную дату и время публикации
+    publish_datetime = datetime.combine(
+        selected_date, 
+        datetime.min.time().replace(hour=hour, minute=minute)
+    )
+    
+    # Сохраняем сгенерированный пост в БД с запланированной датой
+    generated_text = user_data.get("generated_text", "")
+    chat_id = user_data.get("chat_id")
+    user_id = call.from_user.id
+    generation_mode = user_data.get("generation_mode", "BASIC")
+    
+    # Сохраняем параметры генерации в зависимости от режима
+    if generation_mode == "BASIC":
+        generation_params = {
+            "mode": "BASIC",
+            "blog_topic": user_data.get("blog_topic_name"),
+            "content_type": user_data.get("content_type_name"),
+            "themes": user_data.get("themes"),
+            "tone": user_data.get("tone_name"),
+            "structure": {k: v for k, v in user_data.get("structure", {}).items() if v},
+            "length": user_data.get("length_name")
+        }
+    else:
+        generation_params = {
+            "mode": "PRO",
+            "prompt": user_data.get("pro_prompt", "")
+        }
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            # Создаем новую запись в БД
+            post = Post(
+                chat_id=chat_id,
+                text=generated_text,
+                publish_at=publish_datetime,
+                created_by=user_id,
+                status="approved",
+                published=False,
+                is_generated=True,
+                generation_params=json.dumps(generation_params)
             )
+            
+            session.add(post)
+            await session.commit()
+            
+            # Оповещаем пользователя об успешном планировании
+            await call.message.edit_text(
+                f"✅ Пост запланирован на {publish_datetime.strftime('%d.%m.%Y %H:%M')}!\n\n"
+                f"{generated_text[:200]}...\n\n"
+                f"Пост будет автоматически опубликован в указанное время.\n"
+                f"Вы можете управлять запланированными постами в разделе '📋 Очередь публикаций'"
+            )
+            
+            # Очищаем состояние
+            await state.clear()
+            
+    except Exception as e:
+        logger.error(f"Error scheduling post: {e}")
+        
+        await call.message.edit_text(
+            f"❌ Ошибка при планировании публикации: {str(e)}\n\n"
+            f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
+        )
+
+
+async def publish_post_now(call: CallbackQuery, state: FSMContext):
+    """Функция для немедленной публикации поста"""
+    user_data = await state.get_data()
+    generated_text = user_data.get("generated_text", "")
+    chat_id = user_data.get("chat_id")
+    generation_mode = user_data.get("generation_mode", "BASIC")
+    
+    # Сохраняем параметры генерации в зависимости от режима
+    if generation_mode == "BASIC":
+        generation_params = {
+            "mode": "BASIC",
+            "blog_topic": user_data.get("blog_topic_name"),
+            "content_type": user_data.get("content_type_name"),
+            "themes": user_data.get("themes"),
+            "tone": user_data.get("tone_name"),
+            "structure": {k: v for k, v in user_data.get("structure", {}).items() if v},
+            "length": user_data.get("length_name")
+        }
+    else:
+        generation_params = {
+            "mode": "PRO",
+            "prompt": user_data.get("pro_prompt", "")
+        }
+    
+    try:
+        # Отправляем сообщение в чат
+        await call.bot.send_message(
+            chat_id=chat_id,
+            text=generated_text,
+            parse_mode="HTML"
+        )
+        
+        # Сохраняем пост в БД как опубликованный
+        async with AsyncSessionLocal() as session:
+            post = Post(
+                chat_id=chat_id,
+                text=generated_text,
+                publish_at=datetime.now(timezone.utc),
+                created_by=call.from_user.id,
+                status="approved",
+                published=True,
+                is_generated=True,
+                generation_params=json.dumps(generation_params)
+            )
+            
+            session.add(post)
+            await session.commit()
+            
+        # Оповещаем пользователя об успешной публикации
+        await call.message.edit_text(
+            "✅ Пост успешно опубликован!\n\n"
+            f"{generated_text[:200]}...\n\n"
+            "Для создания нового поста воспользуйтесь командой '✨ Создать пост' в главном меню."
         )
         
         # Очищаем состояние
         await state.clear()
-    
-    else:  # pro_cancel
+        
+    except Exception as e:
+        logger.error(f"Error publishing post: {str(e)}")
+        
         await call.message.edit_text(
-            "❌ Настройка автогенерации отменена.\n"
-            "Вы можете начать настройку заново или вернуться в главное меню."
+            f"❌ Ошибка при публикации поста: {str(e)}\n\n"
+            f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
         )
-        await state.clear()
 
 
-# ------------------ ФУНКЦИИ ГЕНЕРАЦИИ ------------------
-
-async def generate_posts_with_basic_prompt(
-    chat_id: int, 
-    user_id: int, 
-    params: dict,
-    post_count: int,
-    moderation_enabled: bool,
-    bot
-):
-    """Генерирует посты с использованием параметров из конструктора BASIC"""
-    post_ids = []
+# Обработчики для навигации между состояниями
+@router.callback_query(lambda c: c.data == "regenerate_basic")
+async def regenerate_basic_post(call: CallbackQuery, state: FSMContext):
+    """Обработчик повторной генерации поста в режиме BASIC"""
+    user_data = await state.get_data()
+    
+    await call.message.edit_text("⏳ Генерируем пост на основе выбранных параметров...")
     
     try:
-        # Логируем начало процесса
-        logger.info(f"Starting post generation for chat {chat_id}, user {user_id}")
-        logger.info(f"Parameters: {params}")
+        # Формируем промпт по параметрам
+        prompt = build_basic_prompt(user_data)
         
-        async with AsyncSessionLocal() as session:
-            # Генерируем посты
-            for i in range(post_count):
-                try:
-                    # Формируем промпт на основе параметров
-                    base_prompt = build_basic_prompt(params)
-                    
-                    # Добавляем указание на порядковый номер для разнообразия
-                    if post_count > 1:
-                        prompt = f"{base_prompt} (Это пост {i+1} из {post_count}, создай уникальный контент.)"
-                    else:
-                        prompt = base_prompt
-                    
-                    # Генерируем контент
-                    logger.info(f"Generating post {i+1}/{post_count}")
-                    generated_text = await generate_article(prompt)
-                    
-                    # Сохраняем пост в базе данных
-                    new_post = Post(
-                        chat_id=chat_id,
-                        text=generated_text,
-                        media_file_id=None,  # Пока без медиа
-                        publish_at=datetime.now(timezone.utc),  # По умолчанию текущее время
-                        created_by=user_id,
-                        status="pending" if moderation_enabled else "approved",
-                        published=False,
-                        is_generated=True,
-                        generation_params=json.dumps({
-                            "mode": "BASIC",
-                            "blog_topic": params.get("blog_topic_name"),
-                            "content_type": params.get("content_type_name"),
-                            "themes": params.get("themes"),
-                            "tone": params.get("tone_name"),
-                            "structure": {k: v for k, v in params.get("structure", {}).items() if v},
-                            "length": params.get("length_name")
-                        })
-                    )
-                    
-                    session.add(new_post)
-                    await session.flush()  # Чтобы получить ID
-                    
-                    post_ids.append(new_post.id)
-                    logger.info(f"Post {i+1} generated with ID {new_post.id}")
-                    
-                    # Небольшая задержка чтобы не перегружать API
-                    await asyncio.sleep(2)
-                
-                except Exception as e:
-                    logger.error(f"Error generating post {i+1}: {str(e)}")
-            
-            await session.commit()
+        # Генерируем пост
+        generated_text = await generate_article(prompt)
         
-        # Отправляем уведомление о завершении
-        if post_ids:
-            # Сообщение о завершении генерации
-            completion_message = (
-                f"✅ Генерация завершена! Создано постов: {len(post_ids)}\n\n"
-            )
-            
-            # Добавляем инструкцию в зависимости от настроек модерации
-            if moderation_enabled:
-                completion_message += (
-                    f"🔍 Посты требуют вашего одобрения перед публикацией.\n"
-                    f"Перейдите в раздел '🕓 Ожидают публикации' для проверки."
-                )
-            else:
-                completion_message += (
-                    f"🚀 Посты добавлены в очередь на публикацию.\n"
-                    f"Перейдите в раздел '📋 Очередь публикаций' для управления расписанием."
-                )
-            
-            await bot.send_message(user_id, completion_message)
-        else:
-            await bot.send_message(
-                user_id,
-                "⚠️ Не удалось сгенерировать посты. Пожалуйста, попробуйте еще раз с другими параметрами."
-            )
-    
+        # Сохраняем сгенерированный текст
+        await state.update_data(generated_text=generated_text, generation_mode="BASIC")
+        
+        # Показываем результат с кнопками действий
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+            [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+            [InlineKeyboardButton(text="✏️ Редактировать", callback_data="post_edit")],
+            [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+            [InlineKeyboardButton(text="🔧 Изменить параметры", callback_data="post_change_params")]
+        ])
+        
+        await call.message.edit_text(
+            f"✅ Пост сгенерирован!\n\n"
+            f"{generated_text}\n\n"
+            f"Выберите действие:",
+            reply_markup=markup
+        )
+        
+        await state.set_state(AutoGenStates.generated_post)
+        
     except Exception as e:
-        logger.error(f"Error in generate_posts_with_basic_prompt: {str(e)}")
-        # Отправляем сообщение об ошибке
-        try:
-            await bot.send_message(
-                user_id,
-                f"❌ Произошла ошибка при генерации постов: {str(e)}\n"
-                f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
-            )
-        except Exception:
-            pass
-
-
-async def generate_posts_with_pro_prompt(
-    chat_id: int, 
-    user_id: int, 
-    prompt: str,
-    post_count: int,
-    moderation_enabled: bool,
-    bot
-):
-    """Генерирует посты с использованием пользовательского промпта из PRO режима"""
-    post_ids = []
-    
-    try:
-        # Логируем начало процесса
-        logger.info(f"Starting post generation (PRO mode) for chat {chat_id}, user {user_id}")
-        logger.info(f"Prompt: {prompt}")
+        logger.error(f"Error regenerating post: {str(e)}")
         
-        async with AsyncSessionLocal() as session:
-            # Генерируем посты
-            for i in range(post_count):
-                try:
-                    # Используем исходный промпт пользователя
-                    current_prompt = prompt
-                    
-                    # Если нужно несколько постов, добавляем указание на порядковый номер
-                    if post_count > 1:
-                        current_prompt = f"{prompt} (Это пост {i+1} из {post_count}, создай уникальный контент.)"
-                    
-                    # Генерируем контент
-                    logger.info(f"Generating post {i+1}/{post_count} (PRO mode)")
-                    generated_text = await generate_article(current_prompt)
-                    
-                    # Сохраняем пост в базе данных
-                    new_post = Post(
-                        chat_id=chat_id,
-                        text=generated_text,
-                        media_file_id=None,  # Пока без медиа
-                        publish_at=datetime.now(timezone.utc),  # По умолчанию текущее время
-                        created_by=user_id,
-                        status="pending" if moderation_enabled else "approved",
-                        published=False,
-                        is_generated=True,
-                        generation_params=json.dumps({
-                            "mode": "PRO",
-                            "prompt": prompt
-                        })
-                    )
-                    
-                    session.add(new_post)
-                    await session.flush()  # Чтобы получить ID
-                    
-                    post_ids.append(new_post.id)
-                    logger.info(f"Post {i+1} (PRO mode) generated with ID {new_post.id}")
-                    
-                    # Небольшая задержка чтобы не перегружать API
-                    await asyncio.sleep(2)
-                
-                except Exception as e:
-                    logger.error(f"Error generating post {i+1} (PRO mode): {str(e)}")
-            
-            await session.commit()
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="regenerate_basic")],
+            [InlineKeyboardButton(text="⬅️ Вернуться к параметрам", callback_data="back_to_params")]
+        ])
         
-        # Отправляем уведомление о завершении
-        if post_ids:
-            # Сообщение о завершении генерации
-            completion_message = (
-                f"✅ Генерация завершена! Создано постов: {len(post_ids)}\n\n"
-            )
-            
-            # Добавляем инструкцию в зависимости от настроек модерации
-            if moderation_enabled:
-                completion_message += (
-                    f"🔍 Посты требуют вашего одобрения перед публикацией.\n"
-                    f"Перейдите в раздел '🕓 Ожидают публикации' для проверки."
-                )
-            else:
-                completion_message += (
-                    f"🚀 Посты добавлены в очередь на публикацию.\n"
-                    f"Перейдите в раздел '📋 Очередь публикаций' для управления расписанием."
-                )
-            
-            await bot.send_message(user_id, completion_message)
-        else:
-            await bot.send_message(
-                user_id,
-                "⚠️ Не удалось сгенерировать посты. Пожалуйста, попробуйте еще раз с другим промптом."
-            )
-    
-    except Exception as e:
-        logger.error(f"Error in generate_posts_with_pro_prompt: {str(e)}")
-        # Отправляем сообщение об ошибке
-        try:
-            await bot.send_message(
-                user_id,
-                f"❌ Произошла ошибка при генерации постов: {str(e)}\n"
-                f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
-            )
-        except Exception:
-            pass
+        await call.message.edit_text(
+            f"❌ Произошла ошибка при генерации поста: {str(e)}\n\n"
+            f"Что делать дальше?",
+            reply_markup=markup
+        )
 
 
-# Вспомогательные функции для создания клавиатур
-def get_content_types_keyboard():
-    """Создает клавиатуру с типами контента"""
+@router.callback_query(lambda c: c.data == "back_to_params")
+async def back_to_basic_params(call: CallbackQuery, state: FSMContext):
+    """Возврат к настройке параметров в режиме BASIC"""
+    # Возвращаемся к первому шагу BASIC
     kb = []
-    for code, name in CONTENT_TYPES.items():
-        kb.append([InlineKeyboardButton(text=name, callback_data=f"ct_{code}")])
+    for code, name in BLOG_TOPICS.items():
+        kb.append([InlineKeyboardButton(text=name, callback_data=f"blog_{code}")])
     
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+    markup = InlineKeyboardMarkup(inline_keyboard=kb)
+    
+    await call.message.edit_text(
+        "Выбран режим <b>Конструктор (BASIC)</b>\n\n"
+        "Шаг 1: Выберите основную тематику блога:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+    await state.set_state(AutoGenStates.blog_topic)
+
+
+@router.callback_query(lambda c: c.data == "back_to_post")
+async def back_to_post_view(call: CallbackQuery, state: FSMContext):
+    """Возврат к просмотру поста"""
+    user_data = await state.get_data()
+    generation_mode = user_data.get("generation_mode", "BASIC")
+    generated_text = user_data.get("generated_text", "")
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Опубликовать сейчас", callback_data="post_publish_now")],
+        [InlineKeyboardButton(text="🕒 Запланировать публикацию", callback_data="post_schedule")],
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data="post_edit")],
+        [InlineKeyboardButton(text="🔄 Сгенерировать другой вариант", callback_data="post_regenerate")],
+        [InlineKeyboardButton(
+            text="🔧 Изменить параметры" if generation_mode == "BASIC" else "📝 Изменить промпт",
+            callback_data="post_change_params" if generation_mode == "BASIC" else "post_change_prompt"
+        )]
+    ])
+    
+    await call.message.edit_text(
+        f"Сгенерированный пост:\n\n"
+        f"{generated_text}\n\n"
+        f"Выберите действие:",
+        reply_markup=markup
+    )
+    
+    # Возвращаемся к соответствующему состоянию
+    if generation_mode == "BASIC":
+        await state.set_state(AutoGenStates.generated_post)
+    else:
+        await state.set_state(AutoGenStates.pro_generated_post)
