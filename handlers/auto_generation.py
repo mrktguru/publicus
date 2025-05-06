@@ -1,4 +1,4 @@
-# handlers/auto_generation.py
+# handlers/auto_generation.py (Часть 1: Импорты, настройки и определение состояний)
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -14,7 +14,8 @@ from database.models import Post, Group
 from gpt_client import generate_article
 from utils.prompt_manager import (
     PRO_MODE, BASIC_MODE, CONTENT_TYPES, TONES, STRUCTURE_OPTIONS, 
-    LENGTH_OPTIONS, BLOG_TOPICS, validate_pro_prompt, build_basic_prompt
+    LENGTH_OPTIONS, BLOG_TOPICS, validate_pro_prompt, build_basic_prompt,
+    MAX_PROMPT_LENGTH
 )
 
 router = Router()
@@ -123,6 +124,7 @@ async def process_mode_selection(call: CallbackQuery, state: FSMContext):
         )
         await state.set_state(AutoGenStates.pro_prompt)
 
+# handlers/auto_generation.py (Часть 2: Обработчики BASIC режима)
 
 # ------------------ BASIC MODE HANDLERS ------------------
 
@@ -512,25 +514,6 @@ async def process_final_confirmation(call: CallbackQuery, state: FSMContext):
         asyncio.create_task(
             generate_posts_with_basic_prompt(
                 chat_id=user_data.get("chat_id"),
-                user_id=call
-
-@router.callback_query(AutoGenStates.confirmation)
-async def process_final_confirmation(call: CallbackQuery, state: FSMContext):
-    """Обработка финального подтверждения BASIC режима"""
-    if call.data == "template_confirm":
-        # Получаем данные из состояния
-        user_data = await state.get_data()
-        
-        await call.message.edit_text(
-            "✅ Параметры настроены!\n\n"
-            "⏳ Начинаем генерацию постов. Это может занять некоторое время.\n"
-            "Вы получите уведомление, когда посты будут готовы."
-        )
-        
-        # Запускаем процесс генерации в фоне
-        asyncio.create_task(
-            generate_posts_with_basic_prompt(
-                chat_id=user_data.get("chat_id"),
                 user_id=call.from_user.id,
                 params=user_data,
                 post_count=user_data["post_count"],
@@ -549,6 +532,7 @@ async def process_final_confirmation(call: CallbackQuery, state: FSMContext):
         )
         await state.clear()
 
+# handlers/auto_generation.py (Часть 3: Обработчики PRO режима и функции генерации)
 
 # ------------------ PRO MODE HANDLERS ------------------
 
@@ -990,4 +974,3 @@ def get_content_types_keyboard():
         kb.append([InlineKeyboardButton(text=name, callback_data=f"ct_{code}")])
     
     return InlineKeyboardMarkup(inline_keyboard=kb)
-
