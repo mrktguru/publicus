@@ -17,11 +17,11 @@ async def generate_article(prompt: str) -> str:
         data = {
             "model": "gpt-4",
             "messages": [
-                {"role": "system", "content": SYSTEM_CONTEXT},
+                {"role": "system", "content": "Ты пишешь короткие посты для социальных сетей на русском языке. Не используй явные маркеры структуры текста вроде 'Основной текст:', 'Подзаголовок:', 'Заключение:' и т.п. Форматируй текст органично и естественно."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,
-            "max_tokens": 1000
+            "max_tokens": 800
         }
         
         response = requests.post(
