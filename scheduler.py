@@ -1,4 +1,4 @@
-# scheduler.py 01
+# scheduler.py
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 from datetime import datetime, timezone, timedelta
@@ -8,24 +8,35 @@ from zoneinfo import ZoneInfo
 import asyncio
 
 from database.db import AsyncSessionLocal
-from database.models import Post
+from database.models import Post, GoogleSheet, Group
+from utils.google_sheets import GoogleSheetsClient
+from utils.text_formatter import format_google_sheet_text, prepare_media_urls
 
 log = logging.getLogger(__name__)
 # Сохраняем глобальный объект планировщика для доступа из разных функций
 _scheduler = None
 
 def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot):
-    """Регистрирует периодическую задачу проверки очереди."""
+    """Регистрирует периодические задачи."""
     global _scheduler
     _scheduler = scheduler
     
-    # Основная проверка каждую минуту
+    # Основная проверка каждую минуту (существующая)
     scheduler.add_job(
         check_scheduled_posts,
         "interval",
         seconds=60,
         args=(bot,),
         id="check_posts",
+    )
+    
+    # Добавляем проверку Google Таблиц каждые 15 минут
+    scheduler.add_job(
+        check_google_sheets,
+        "interval",
+        minutes=15,
+        args=(bot,),
+        id="check_sheets",
     )
 
 
@@ -85,10 +96,15 @@ async def check_scheduled_posts(bot: Bot):
                                         chat_id=p.chat_id,
                                         photo=p.media_file_id,
                                         caption=p.text,
+                                        parse_mode="HTML"
                                     )
                                     log.info(f"Sent photo post {p.id} to chat {p.chat_id}")
                                 else:
-                                    await bot.send_message(p.chat_id, p.text)
+                                    await bot.send_message(
+                                        chat_id=p.chat_id, 
+                                        text=p.text,
+                                        parse_mode="HTML"
+                                    )
                                     log.info(f"Sent text post {p.id} to chat {p.chat_id}")
     
                                 # Обновляем статус
@@ -124,8 +140,127 @@ async def check_scheduled_posts(bot: Bot):
                 
     except Exception as e:
         log.error(f"Error checking scheduled posts: {e}")
-
-
+# scheduler.py (продолжение)
+async def check_google_sheets(bot: Bot):
+    """Проверяет подключенные Google Таблицы на наличие запланированных постов."""
+    log.info(f"Checking Google Sheets at {datetime.now(timezone.utc)}")
+    
+    try:
+        # Инициализируем клиент Google Sheets
+        sheets_client = GoogleSheetsClient()
+        
+        async with AsyncSessionLocal() as session:
+            # Получаем все активные подключения таблиц
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == True)
+            sheets_result = await session.execute(sheets_q)
+            active_sheets = sheets_result.scalars().all()
+            
+            log.info(f"Found {len(active_sheets)} active Google Sheets connections")
+            
+            for sheet in active_sheets:
+                try:
+                    # Обновляем время последней синхронизации
+                    sheet.last_sync = datetime.now(timezone.utc)
+                    
+                    # Получаем запланированные посты
+                    upcoming_posts = sheets_client.get_upcoming_posts(
+                        sheet.spreadsheet_id, 
+                        sheet.sheet_name
+                    )
+                    
+                    log.info(f"Found {len(upcoming_posts)} upcoming posts in sheet {sheet.spreadsheet_id}")
+                    
+                    # Обрабатываем каждый пост
+                    for post in upcoming_posts:
+                        # Форматируем текст
+                        formatted_text = format_google_sheet_text(post['text'])
+                        
+                        # Публикуем пост
+                        try:
+                            # Получаем channel_id из Telegram или из таблицы
+                            channel_id = post['channel']
+                            if not str(channel_id).startswith('-100'):
+                                # Это не числовой ID канала, а возможно его название
+                                # Пытаемся найти этот канал в базе данных
+                                channel_q = select(Group).filter(Group.title == channel_id)
+                                channel_result = await session.execute(channel_q)
+                                channel = channel_result.scalar_one_or_none()
+                                
+                                if channel:
+                                    channel_id = channel.chat_id
+                            
+                            # Отправляем сообщение в указанный канал
+                            if post.get('media'):
+                                # Подготавливаем URL медиа
+                                media_urls = prepare_media_urls(post['media'])
+                                
+                                if media_urls:
+                                    # Отправляем фото
+                                    await bot.send_photo(
+                                        chat_id=channel_id,
+                                        photo=media_urls[0],  # Пока берем только первое изображение
+                                        caption=formatted_text,
+                                        parse_mode="HTML"
+                                    )
+                                else:
+                                    # Если URL медиа некорректны, отправляем только текст
+                                    await bot.send_message(
+                                        chat_id=channel_id,
+                                        text=formatted_text,
+                                        parse_mode="HTML"
+                                    )
+                            else:
+                                # Только текст
+                                await bot.send_message(
+                                    chat_id=channel_id,
+                                    text=formatted_text,
+                                    parse_mode="HTML"
+                                )
+                            
+                            # Обновляем статус в таблице
+                            sheets_client.update_post_status(
+                                sheet.spreadsheet_id,
+                                sheet.sheet_name,
+                                post['row_index'],
+                                "Опубликован"
+                            )
+                            
+                            # Добавляем информацию в историю
+                            sheets_client.add_to_history(
+                                sheet.spreadsheet_id,
+                                post,
+                                "Успешно"
+                            )
+                            
+                            log.info(f"Successfully published post {post['id']} from Google Sheets")
+                            
+                        except Exception as e:
+                            log.error(f"Error publishing post from Google Sheets: {e}")
+                            
+                            # Обновляем статус в таблице
+                            sheets_client.update_post_status(
+                                sheet.spreadsheet_id,
+                                sheet.sheet_name,
+                                post['row_index'],
+                                "Ошибка"
+                            )
+                            
+                            # Добавляем информацию в историю
+                            sheets_client.add_to_history(
+                                sheet.spreadsheet_id,
+                                post,
+                                f"Ошибка: {str(e)}"
+                            )
+                    
+                except Exception as sheet_error:
+                    log.error(f"Error processing sheet {sheet.spreadsheet_id}: {sheet_error}")
+            
+            # Сохраняем изменения в БД
+            await session.commit()
+            
+    except Exception as e:
+        log.error(f"Error checking Google Sheets: {e}")
+# scheduler.py (продолжение)
 async def publish_exact_post(bot: Bot, post_id: int):
     """Публикует конкретный пост в точное время."""
     log.info(f"Publishing exact post {post_id} at {datetime.now(timezone.utc)}")
@@ -142,10 +277,15 @@ async def publish_exact_post(bot: Bot, post_id: int):
                         chat_id=post.chat_id,
                         photo=post.media_file_id,
                         caption=post.text,
+                        parse_mode="HTML"
                     )
                     log.info(f"Sent exact photo post {post.id} to chat {post.chat_id}")
                 else:
-                    await bot.send_message(post.chat_id, post.text)
+                    await bot.send_message(
+                        chat_id=post.chat_id, 
+                        text=post.text,
+                        parse_mode="HTML"
+                    )
                     log.info(f"Sent exact text post {post.id} to chat {post.chat_id}")
 
                 # Обновляем статус
