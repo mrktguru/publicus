@@ -332,11 +332,11 @@ async def connect_group(message: Message):
                 return
             
             # Используем прямой SQL запрос вместо ORM
-            # НОВЫЙ КОД: Прямой SQL запрос
-            sql = """
+            # ИСПРАВЛЕННЫЙ КОД: Используем text() для SQL запроса
+            sql = text("""
             INSERT INTO groups (chat_id, title, added_by, date_added) 
             VALUES (:chat_id, :title, :added_by, CURRENT_TIMESTAMP)
-            """
+            """)
             await session.execute(sql, {
                 "chat_id": chat_id,
                 "title": chat_title,
