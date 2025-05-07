@@ -7,7 +7,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from sqlalchemy import select
+from sqlalchemy import select, text  # Добавьте импорт text
+
 
 from database.db import AsyncSessionLocal
 from database.models import User, Group
@@ -142,11 +143,11 @@ async def process_channel_message(message: Message, state: FSMContext):
                     return
                 
                 # Используем прямой SQL запрос вместо ORM
-                # НОВЫЙ КОД: Прямой SQL запрос
-                sql = """
+                # ИСПРАВЛЕННЫЙ КОД: Используем text() для SQL запроса
+                sql = text("""
                 INSERT INTO groups (chat_id, title, added_by, date_added) 
                 VALUES (:chat_id, :title, :added_by, CURRENT_TIMESTAMP)
-                """
+                """)
                 await session.execute(sql, {
                     "chat_id": channel_id,
                     "title": channel_title,
@@ -192,7 +193,6 @@ async def process_channel_message(message: Message, state: FSMContext):
         )
 
 
-
 @router.message(ChannelStates.waiting_for_display_name)
 async def process_display_name(message: Message, state: FSMContext):
     """Обработка ввода пользовательского имени для канала"""
@@ -213,11 +213,11 @@ async def process_display_name(message: Message, state: FSMContext):
             username_without_at = channel_username.lstrip('@') if channel_username else None
             
             # Используем прямой SQL запрос вместо ORM
-            # НОВЫЙ КОД: Прямой SQL запрос
-            sql = """
+           # ИСПРАВЛЕННЫЙ КОД: Используем text() для SQL запроса
+            sql = text("""
             INSERT INTO groups (chat_id, title, added_by, date_added) 
             VALUES (0, :title, :added_by, CURRENT_TIMESTAMP)
-            """
+            """)
             result = await session.execute(sql, {
                 "title": display_name,
                 "added_by": user_id
@@ -225,11 +225,11 @@ async def process_display_name(message: Message, state: FSMContext):
             await session.commit()
             
             # Получаем ID только что созданной группы
-            group_id_query = """
+            group_id_query = text("""
             SELECT id FROM groups 
             WHERE chat_id = 0 AND title = :title AND added_by = :added_by
             ORDER BY id DESC LIMIT 1
-            """
+            """)
             result = await session.execute(group_id_query, {
                 "title": display_name,
                 "added_by": user_id
