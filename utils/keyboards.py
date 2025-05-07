@@ -28,10 +28,15 @@ async def create_channels_keyboard(user_id):
         # Создаем inline-клавиатуру
         keyboard = []
         for channel in channels:
-            display_text = f"{'канал' if channel.type == 'channel' else 'группа'} {channel.display_name or channel.title}"
+            # Безопасно получаем атрибуты, используя getattr с значениями по умолчанию
+            channel_type = getattr(channel, 'type', 'channel')
+            display_name = getattr(channel, 'display_name', channel.title)
+            
+            display_text = f"{'канал' if channel_type == 'channel' else 'группа'} {display_name or channel.title}"
             keyboard.append([InlineKeyboardButton(text=display_text, callback_data=f"select_channel_{channel.id}")])
         
         # Добавляем кнопку для добавления нового канала
         keyboard.append([InlineKeyboardButton(text="+ Добавить канал", callback_data="add_channel")])
         
         return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
