@@ -98,6 +98,7 @@ async def back_to_add_select(call: CallbackQuery, state: FSMContext):
         ])
     )
     await state.clear()
+
 @router.message(ChannelStates.waiting_for_channel_message)
 async def process_channel_message(message: Message, state: FSMContext):
     """Обработка пересланного сообщения из канала"""
@@ -140,37 +141,17 @@ async def process_channel_message(message: Message, state: FSMContext):
                     await state.clear()
                     return
                 
-                # Добавляем канал в базу данных - МОДИФИЦИРОВАННЫЙ КОД
-                # Создаем объект Group без аргументов и устанавливаем атрибуты по отдельности
-                new_group = Group()
-                
-                # Устанавливаем обязательные атрибуты
-                new_group.chat_id = channel_id
-                new_group.title = channel_title
-                new_group.added_by = user_id
-                
-                # Устанавливаем дополнительные атрибуты с обработкой исключений
-                try:
-                    new_group.type = "channel"
-                except Exception:
-                    pass  # Игнорируем ошибку, если атрибут не существует
-                
-                try:
-                    new_group.is_active = True
-                except Exception:
-                    pass
-                
-                try:
-                    new_group.username = channel_username_value
-                except Exception:
-                    pass
-                
-                try:
-                    new_group.display_name = channel_title
-                except Exception:
-                    pass
-                
-                session.add(new_group)
+                # Используем прямой SQL запрос вместо ORM
+                # НОВЫЙ КОД: Прямой SQL запрос
+                sql = """
+                INSERT INTO groups (chat_id, title, added_by, date_added) 
+                VALUES (:chat_id, :title, :added_by, CURRENT_TIMESTAMP)
+                """
+                await session.execute(sql, {
+                    "chat_id": channel_id,
+                    "title": channel_title,
+                    "added_by": user_id
+                })
                 await session.commit()
                 
                 # Обновляем текущий выбранный канал пользователя
@@ -209,6 +190,9 @@ async def process_channel_message(message: Message, state: FSMContext):
             "⚠️ Это не пересланное сообщение из канала. Пожалуйста, перешлите сообщение из канала "
             "или отправьте @username публичного канала."
         )
+
+
+
 @router.message(ChannelStates.waiting_for_display_name)
 async def process_display_name(message: Message, state: FSMContext):
     """Обработка ввода пользовательского имени для канала"""
@@ -228,61 +212,29 @@ async def process_display_name(message: Message, state: FSMContext):
             # Проверяем, не добавлен ли уже канал с таким username
             username_without_at = channel_username.lstrip('@') if channel_username else None
             
-            if username_without_at:
-                # Проверяем существование канала с таким username
-                try:
-                    existing_group_q = select(Group).filter(Group.username == username_without_at)
-                    existing_group_result = await session.execute(existing_group_q)
-                    existing_group = existing_group_result.scalar_one_or_none()
-                    
-                    if existing_group:
-                        # Канал уже добавлен
-                        await message.answer(
-                            f"⚠️ Канал {channel_username} уже добавлен в систему."
-                        )
-                        await state.clear()
-                        return
-                except Exception:
-                    # Если атрибут username не существует, пропускаем проверку
-                    pass
-            
-            # Добавляем канал в базу данных - МОДИФИЦИРОВАННЫЙ КОД
-            # Создаем объект Group без аргументов и устанавливаем атрибуты по отдельности
-            new_group = Group()
-            
-            # Устанавливаем обязательные атрибуты
-            new_group.chat_id = 0  # Временное значение
-            new_group.title = display_name
-            new_group.added_by = user_id
-            
-            # Устанавливаем дополнительные атрибуты с обработкой исключений
-            try:
-                new_group.type = "channel"
-            except Exception:
-                pass
-            
-            try:
-                new_group.is_active = True
-            except Exception:
-                pass
-            
-            try:
-                new_group.username = username_without_at
-            except Exception:
-                pass
-            
-            try:
-                new_group.display_name = display_name
-            except Exception:
-                pass
-            
-            session.add(new_group)
+            # Используем прямой SQL запрос вместо ORM
+            # НОВЫЙ КОД: Прямой SQL запрос
+            sql = """
+            INSERT INTO groups (chat_id, title, added_by, date_added) 
+            VALUES (0, :title, :added_by, CURRENT_TIMESTAMP)
+            """
+            result = await session.execute(sql, {
+                "title": display_name,
+                "added_by": user_id
+            })
             await session.commit()
             
-            # Получаем ID созданной группы
-            group_id_q = select(Group.id).filter(Group.title == display_name, Group.added_by == user_id)
-            group_id_result = await session.execute(group_id_q)
-            group_id = group_id_result.scalar_one_or_none()
+            # Получаем ID только что созданной группы
+            group_id_query = """
+            SELECT id FROM groups 
+            WHERE chat_id = 0 AND title = :title AND added_by = :added_by
+            ORDER BY id DESC LIMIT 1
+            """
+            result = await session.execute(group_id_query, {
+                "title": display_name,
+                "added_by": user_id
+            })
+            group_id = result.scalar_one_or_none()
             
             # Обновляем текущий выбранный канал пользователя
             user_q = select(User).filter(User.user_id == user_id)
@@ -315,6 +267,9 @@ async def process_display_name(message: Message, state: FSMContext):
         logger.error(f"Error adding channel by username: {e}")
         await message.answer("⚠️ Произошла ошибка при добавлении канала. Пожалуйста, попробуйте позже.")
         await state.clear()
+
+
+
 @router.message(Command('connect'))
 async def connect_group(message: Message):
     """Обработка команды /connect в группе"""
@@ -376,37 +331,17 @@ async def connect_group(message: Message):
                     )
                 return
             
-            # Добавляем группу в базу данных - МОДИФИЦИРОВАННЫЙ КОД
-            # Создаем объект Group без аргументов и устанавливаем атрибуты по отдельности
-            new_group = Group()
-            
-            # Устанавливаем обязательные атрибуты
-            new_group.chat_id = chat_id
-            new_group.title = chat_title
-            new_group.added_by = user_id
-            
-            # Устанавливаем дополнительные атрибуты с обработкой исключений
-            try:
-                new_group.type = "group"
-            except Exception:
-                pass
-            
-            try:
-                new_group.is_active = True
-            except Exception:
-                pass
-            
-            try:
-                new_group.username = message.chat.username
-            except Exception:
-                pass
-            
-            try:
-                new_group.display_name = chat_title
-            except Exception:
-                pass
-            
-            session.add(new_group)
+            # Используем прямой SQL запрос вместо ORM
+            # НОВЫЙ КОД: Прямой SQL запрос
+            sql = """
+            INSERT INTO groups (chat_id, title, added_by, date_added) 
+            VALUES (:chat_id, :title, :added_by, CURRENT_TIMESTAMP)
+            """
+            await session.execute(sql, {
+                "chat_id": chat_id,
+                "title": chat_title,
+                "added_by": user_id
+            })
             await session.commit()
             
             # Обновляем текущий выбранный канал пользователя
@@ -434,59 +369,7 @@ async def connect_group(message: Message):
     except Exception as e:
         logger.error(f"Error connecting group: {e}")
         await message.answer("⚠️ Произошла ошибка при подключении группы. Пожалуйста, попробуйте позже.")
-@router.callback_query(lambda c: c.data.startswith("select_channel_"))
-async def process_channel_selection(call: CallbackQuery, state: FSMContext):
-    """Обработка выбора канала/группы"""
-    user_id = call.from_user.id
-    channel_id = int(call.data.split("_")[2])
-    
-    try:
-        async with AsyncSessionLocal() as session:
-            # Получаем информацию о канале
-            channel_q = select(Group).filter(Group.id == channel_id)
-            channel_result = await session.execute(channel_q)
-            channel = channel_result.scalar_one_or_none()
-            
-            if not channel:
-                await call.answer("⚠️ Выбранный канал не найден.")
-                return
-            
-            # Обновляем текущий выбранный канал пользователя
-            user_q = select(User).filter(User.user_id == user_id)
-            user_result = await session.execute(user_q)
-            user = user_result.scalar_one_or_none()
-            
-            if user:
-                user.current_chat_id = channel.chat_id
-                await session.commit()
-            
-            # Создаем клавиатуру с основными действиями
-            keyboard = ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="Создать пост")],
-                    [KeyboardButton(text="Контент план"), KeyboardButton(text="История публикаций")],
-                    [KeyboardButton(text="Таблицы"), KeyboardButton(text="Настройки")],
-                    [KeyboardButton(text="Сменить группу")]
-                ],
-                resize_keyboard=True,
-                is_persistent=True
-            )
-            
-            # Отправляем уведомление о выборе канала и показываем меню
-            await call.message.edit_text(
-                f"✅ Канал \"{channel.title}\" выбран!\n\n"
-                f"Выберите действие:"
-            )
-            
-            # Отправляем новое сообщение с клавиатурой
-            await call.message.answer(
-                f"Канал \"{channel.title}\" выбран!",
-                reply_markup=keyboard
-            )
-            
-    except Exception as e:
-        logger.error(f"Error selecting channel: {e}")
-        await call.answer("⚠️ Произошла ошибка при выборе канала. Пожалуйста, попробуйте позже.")
+
 
 @router.message(lambda m: m.text == "Сменить группу")
 async def change_group(message: Message):
