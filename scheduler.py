@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import asyncio
 
 from database.db import AsyncSessionLocal
-from database.models import Post, GoogleSheet, Group
+from database.models import Post, Group, GoogleSheet
 from utils.google_sheets import GoogleSheetsClient
 from utils.text_formatter import format_google_sheet_text, prepare_media_urls
 
