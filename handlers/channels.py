@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from database.db import AsyncSessionLocal
 from database.models import User, Group
+from utils.keyboards import create_channels_keyboard, create_main_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -22,43 +23,68 @@ class ChannelStates(StatesGroup):
     waiting_for_group_command = State()
     waiting_for_display_name = State()
 
-@router.callback_query(lambda c: c.data in ["add_channel", "add_group"])
-async def process_add_channel_group(call: CallbackQuery, state: FSMContext):
-    """Обработчик inline-кнопок для добавления канала или группы"""
-    action = call.data
-    
-    if action == "add_channel":
-        # Инструкции по добавлению канала
-        await state.update_data(adding_type="channel")
+@router.callback_query(lambda c: c.data == "add_channel")
+async def add_channel_callback(call: CallbackQuery, state: FSMContext):
+    """Обработчик inline-кнопки для добавления канала"""
+    await call.message.edit_text(
+        "📌 Что вы хотите добавить?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📣 Канал", callback_data="add_channel_type")],
+            [InlineKeyboardButton(text="👥 Группу", callback_data="add_group_type")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_channels")]
+        ])
+    )
+
+@router.callback_query(lambda c: c.data == "back_to_channels")
+async def back_to_channels(call: CallbackQuery):
+    """Возврат к списку каналов"""
+    user_id = call.from_user.id
+    try:
+        keyboard = await create_channels_keyboard(user_id)
         await call.message.edit_text(
-            "📣 <b>Добавление нового канала</b>\n\n"
-            "Для добавления канала выполните следующие шаги:\n\n"
-            "1) Добавьте бота (@your_bot_username) администратором в канал\n"
-            "2) Убедитесь, что у бота есть права на публикацию сообщений\n"
-            "3) Перешлите любое сообщение из канала в этот чат\n"
-            "<b>ИЛИ</b>\n"
-            "Отправьте @username канала (если он публичный)",
+            "📝 <b>Выберите канал или группу для работы</b>\n\n"
+            "Выберите одну из подключенных групп/каналов или добавьте новую.",
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]
-            ])
+            reply_markup=keyboard
         )
-        await state.set_state(ChannelStates.waiting_for_channel_message)
-    else:
-        # Инструкции по добавлению группы
-        await state.update_data(adding_type="group")
-        await call.message.edit_text(
-            "👥 <b>Добавление новой группы</b>\n\n"
-            "Для добавления группы выполните следующие шаги:\n\n"
-            "1) Добавьте бота (@your_bot_username) в группу\n"
-            "2) Назначьте бота администратором с правами на публикацию сообщений\n"
-            "3) Отправьте команду /connect в группе",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]
-            ])
-        )
-        await state.set_state(ChannelStates.waiting_for_group_command)
+    except Exception as e:
+        logger.error(f"Error in back_to_channels: {e}")
+        await call.answer("Произошла ошибка. Пожалуйста, попробуйте снова.")
+
+@router.callback_query(lambda c: c.data == "add_channel_type")
+async def process_add_channel(call: CallbackQuery, state: FSMContext):
+    """Обработчик для добавления канала"""
+    await state.update_data(adding_type="channel")
+    await call.message.edit_text(
+        "📣 <b>Добавление нового канала</b>\n\n"
+        "Для добавления канала выполните следующие шаги:\n\n"
+        "1) Добавьте бота (@your_bot_username) администратором в канал\n"
+        "2) Убедитесь, что у бота есть права на публикацию сообщений\n"
+        "3) Перешлите любое сообщение из канала в этот чат\n"
+        "<b>ИЛИ</b>\n"
+        "Отправьте @username канала (если он публичный)",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]
+        ])
+    )
+    await state.set_state(ChannelStates.waiting_for_channel_message)
+@router.callback_query(lambda c: c.data == "add_group_type")
+async def process_add_group(call: CallbackQuery, state: FSMContext):
+    """Обработчик для добавления группы"""
+    await state.update_data(adding_type="group")
+    await call.message.edit_text(
+        "👥 <b>Добавление новой группы</b>\n\n"
+        "Для добавления группы выполните следующие шаги:\n\n"
+        "1) Добавьте бота (@your_bot_username) в группу\n"
+        "2) Назначьте бота администратором с правами на публикацию сообщений\n"
+        "3) Отправьте команду /connect в группе",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]
+        ])
+    )
+    await state.set_state(ChannelStates.waiting_for_group_command)
 
 @router.callback_query(lambda c: c.data == "back_to_add_select")
 async def back_to_add_select(call: CallbackQuery, state: FSMContext):
@@ -66,13 +92,13 @@ async def back_to_add_select(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(
         "📌 Что вы хотите добавить?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📣 Канал", callback_data="add_channel")],
-            [InlineKeyboardButton(text="👥 Группу", callback_data="add_group")],
-            [InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton(text="📣 Канал", callback_data="add_channel_type")],
+            [InlineKeyboardButton(text="👥 Группу", callback_data="add_group_type")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_channels")]
         ])
     )
     await state.clear()
-# handlers/channels.py (продолжение)
+
 @router.message(ChannelStates.waiting_for_channel_message)
 async def process_channel_message(message: Message, state: FSMContext):
     """Обработка пересланного сообщения из канала"""
@@ -88,7 +114,6 @@ async def process_channel_message(message: Message, state: FSMContext):
         )
         await state.set_state(ChannelStates.waiting_for_display_name)
         return
-    
     # Если пользователь переслал сообщение из канала
     if message.forward_from_chat and message.forward_from_chat.type == "channel":
         channel_id = message.forward_from_chat.id
@@ -137,14 +162,19 @@ async def process_channel_message(message: Message, state: FSMContext):
                     user.current_chat_id = channel_id
                     await session.commit()
                 
-                # Уведомляем о добавлении канала и показываем основное меню
+                # Уведомляем об успешном добавлении
                 await message.answer(
                     f"✅ Канал \"{channel_title}\" успешно добавлен!\n\n"
                     f"Теперь вы можете создавать и публиковать контент для этого канала."
                 )
                 
                 # Показываем список каналов для выбора
-                await show_channel_list(message, user_id)
+                keyboard = await create_channels_keyboard(user_id)
+                await message.answer(
+                    "📝 <b>Выберите канал или группу для работы</b>",
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
                 
                 # Очищаем состояние
                 await state.clear()
@@ -159,7 +189,6 @@ async def process_channel_message(message: Message, state: FSMContext):
             "⚠️ Это не пересланное сообщение из канала. Пожалуйста, перешлите сообщение из канала "
             "или отправьте @username публичного канала."
         )
-# handlers/channels.py (продолжение)
 @router.message(ChannelStates.waiting_for_display_name)
 async def process_display_name(message: Message, state: FSMContext):
     """Обработка ввода пользовательского имени для канала"""
@@ -219,7 +248,12 @@ async def process_display_name(message: Message, state: FSMContext):
             )
             
             # Показываем список каналов для выбора
-            await show_channel_list(message, user_id)
+            keyboard = await create_channels_keyboard(user_id)
+            await message.answer(
+                "📝 <b>Выберите канал или группу для работы</b>",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
             
             # Очищаем состояние
             await state.clear()
@@ -228,7 +262,6 @@ async def process_display_name(message: Message, state: FSMContext):
         logger.error(f"Error adding channel by username: {e}")
         await message.answer("⚠️ Произошла ошибка при добавлении канала. Пожалуйста, попробуйте позже.")
         await state.clear()
-# handlers/channels.py (продолжение)
 @router.message(Command('connect'))
 async def connect_group(message: Message):
     """Обработка команды /connect в группе"""
@@ -271,7 +304,6 @@ async def connect_group(message: Message):
                 "⚠️ Только администраторы группы могут использовать эту команду."
             )
             return
-        
         async with AsyncSessionLocal() as session:
             # Проверяем, зарегистрирована ли уже эта группа
             existing_group_q = select(Group).filter(Group.chat_id == chat_id)
@@ -328,48 +360,6 @@ async def connect_group(message: Message):
     except Exception as e:
         logger.error(f"Error connecting group: {e}")
         await message.answer("⚠️ Произошла ошибка при подключении группы. Пожалуйста, попробуйте позже.")
-# handlers/channels.py (продолжение)
-async def show_channel_list(message: Message, user_id: int):
-    """Отображение списка доступных каналов/групп для выбора"""
-    try:
-        async with AsyncSessionLocal() as session:
-            # Получаем список каналов/групп пользователя
-            groups_q = select(Group).filter(Group.added_by == user_id)
-            groups_result = await session.execute(groups_q)
-            groups = groups_result.scalars().all()
-            
-            if not groups:
-                await message.answer(
-                    "📝 <b>Выберите канал или группу для работы</b>\n\n"
-                    "У вас пока нет подключенных каналов или групп.\n"
-                    "Используйте кнопку ниже, чтобы добавить новый канал или группу.",
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="+ Добавить канал", callback_data="add_channel")]
-                    ])
-                )
-                return
-            
-            # Создаем клавиатуру со списком каналов/групп
-            buttons = []
-            for group in groups:
-                display_text = f"{'канал' if group.type == 'channel' else 'группа'} {group.display_name or group.title}"
-                buttons.append([InlineKeyboardButton(text=display_text, callback_data=f"select_channel_{group.id}")])
-            
-            # Добавляем кнопку для добавления нового канала
-            buttons.append([InlineKeyboardButton(text="+ Добавить канал", callback_data="add_channel")])
-            
-            await message.answer(
-                "📝 <b>Выберите канал или группу для работы</b>\n\n"
-                "Выберите один из подключенных групп/каналов или добавьте новую.",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-            )
-            
-    except Exception as e:
-        logger.error(f"Error showing channel list: {e}")
-        await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
-
 @router.callback_query(lambda c: c.data.startswith("select_channel_"))
 async def process_channel_selection(call: CallbackQuery, state: FSMContext):
     """Обработка выбора канала/группы"""
@@ -423,15 +413,42 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error selecting channel: {e}")
         await call.answer("⚠️ Произошла ошибка при выборе канала. Пожалуйста, попробуйте позже.")
-
 @router.message(lambda m: m.text == "Сменить группу")
 async def change_group(message: Message):
-    """Обработка нажатия кнопки 'Сменить группу'"""
+    """Обработка кнопки 'Сменить группу' из основного меню"""
     user_id = message.from_user.id
-    await show_channel_list(message, user_id)
+    
+    try:
+        # Создаем клавиатуру с каналами пользователя
+        keyboard = await create_channels_keyboard(user_id)
+        
+        await message.answer(
+            "📝 <b>Выберите канал или группу для работы</b>\n\n"
+            "Выберите одну из подключенных групп/каналов или добавьте новую.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in change_group handler: {e}")
+        await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
 
 @router.message(Command('channels'))
 async def cmd_channels(message: Message):
     """Обработка команды /channels для просмотра списка каналов"""
     user_id = message.from_user.id
-    await show_channel_list(message, user_id)
+    
+    try:
+        # Создаем клавиатуру с каналами пользователя
+        keyboard = await create_channels_keyboard(user_id)
+        
+        await message.answer(
+            "📝 <b>Выберите канал или группу для работы</b>\n\n"
+            "Выберите одну из подключенных групп/каналов или добавьте новую.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in cmd_channels handler: {e}")
+        await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
