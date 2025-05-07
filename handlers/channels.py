@@ -23,18 +23,16 @@ class ChannelStates(StatesGroup):
     waiting_for_group_command = State()
     waiting_for_display_name = State()
 
-# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-
 async def validate_channel_ownership(user_id: int, chat_id: int) -> bool:
     """Проверяет, принадлежит ли канал пользователю"""
     async with AsyncSessionLocal() as session:
-        group = await session.execute(
+        result = await session.execute(
             select(Group).where(
                 Group.chat_id == chat_id,
                 Group.added_by == user_id
             )
         )
-        return group.scalar_one_or_none() is not None
+        return result.scalar_one_or_none() is not None
 
 async def update_user_current_chat(user_id: int, chat_id: int):
     """Обновляет текущий выбранный чат пользователя"""
@@ -49,8 +47,6 @@ async def update_user_current_chat(user_id: int, chat_id: int):
         except SQLAlchemyError as e:
             logger.error(f"Error updating user current chat: {e}")
             raise
-
-# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
 
 @router.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_callback(call: CallbackQuery, state: FSMContext):
@@ -73,14 +69,15 @@ async def process_add_channel(call: CallbackQuery, state: FSMContext):
     """Обработчик для добавления канала"""
     try:
         await state.update_data(adding_type="channel")
+        bot_username = call.bot.username
         await call.message.edit_text(
-            "📣 <b>Добавление нового канала</b>\n\n"
-            "Для добавления канала выполните следующие шаги:\n\n"
-            "1) Добавьте бота @{call.bot.username} администратором в канал\n"
-            "2) Убедитесь, что у бота есть права на публикацию сообщений\n"
-            "3) Перешлите любое сообщение из канала в этот чат\n"
-            "<b>ИЛИ</b>\n"
-            "Отправьте @username канала (если он публичный)",
+            f"📣 <b>Добавление нового канала</b>\n\n"
+            f"Для добавления канала выполните следующие шаги:\n\n"
+            f"1) Добавьте бота @{bot_username} администратором в канал\n"
+            f"2) Убедитесь, что у бота есть права на публикацию сообщений\n"
+            f"3) Перешлите любое сообщение из канала в этот чат\n"
+            f"<b>ИЛИ</b>\n"
+            f"Отправьте @username канала (если он публичный)",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]
@@ -185,6 +182,7 @@ async def process_display_name(message: Message, state: FSMContext):
             # Проверка существования канала
             existing_group = await session.execute(
                 select(Group).where(Group.username == username_without_at)
+            )
             if existing_group.scalar_one_or_none():
                 await message.answer(f"⚠️ Канал {channel_username} уже добавлен.")
                 await state.clear()
@@ -225,8 +223,6 @@ async def process_display_name(message: Message, state: FSMContext):
         await message.answer("⚠️ Произошла ошибка при добавлении канала.")
         await state.clear()
 
-# ... (остальные обработчики остаются без изменений)
-
 @router.callback_query(lambda c: c.data.startswith("select_channel_"))
 async def process_channel_selection(call: CallbackQuery):
     """Обработка выбора канала/группы"""
@@ -238,6 +234,7 @@ async def process_channel_selection(call: CallbackQuery):
             # Получение информации о канале
             channel = await session.execute(
                 select(Group).where(Group.id == channel_id)
+            )
             channel = channel.scalar_one_or_none()
             
             if not channel:
@@ -267,8 +264,6 @@ async def process_channel_selection(call: CallbackQuery):
     except Exception as e:
         logger.error(f"Error in process_channel_selection: {e}")
         await call.answer("⚠️ Ошибка при выборе канала.")
-
-# ========== КОМАНДЫ ==========
 
 @router.message(Command('channels'))
 async def cmd_channels(message: Message):
