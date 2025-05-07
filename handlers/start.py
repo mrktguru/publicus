@@ -9,6 +9,7 @@ from sqlalchemy import select
 from database.db import AsyncSessionLocal
 from database.models import User, Group
 from config import DEFAULT_ADMIN_ID
+from utils.keyboards import create_channels_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 @router.message(Command('start'))
 async def cmd_start(message: Message, state: FSMContext):
     """Обработчик команды /start"""
+    logger.info("Command /start received")
     user_id = message.from_user.id
     
     try:
@@ -33,11 +35,12 @@ async def cmd_start(message: Message, state: FSMContext):
                 
                 if channels:
                     # Если есть каналы, показываем кнопку для их выбора
+                    keyboard = await create_channels_keyboard(user_id)
                     await message.answer(
                         f"📝 <b>Выберите канал или группу для работы</b>\n\n"
                         f"Выберите одну из подключенных групп/каналов или добавьте новую.",
                         parse_mode="HTML",
-                        reply_markup=await create_channels_keyboard(user_id)
+                        reply_markup=keyboard
                     )
                 else:
                     # Если каналов нет, предлагаем добавить
@@ -98,21 +101,21 @@ async def cmd_start(message: Message, state: FSMContext):
             "⚠️ Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже."
         )
 
-async def create_channels_keyboard(user_id):
-    """Создает клавиатуру со списком каналов/групп пользователя"""
-    async with AsyncSessionLocal() as session:
-        # Получаем все каналы пользователя
-        channels_q = select(Group).filter(Group.added_by == user_id)
-        channels_result = await session.execute(channels_q)
-        channels = channels_result.scalars().all()
-        
-        # Создаем inline-клавиатуру
-        keyboard = []
-        for channel in channels:
-            display_text = f"{'канал' if channel.type == 'channel' else 'группа'} {channel.display_name or channel.title}"
-            keyboard.append([InlineKeyboardButton(text=display_text, callback_data=f"select_channel_{channel.id}")])
-        
-        # Добавляем кнопку для добавления нового канала
-        keyboard.append([InlineKeyboardButton(text="+ Добавить канал", callback_data="add_channel")])
-        
-        return InlineKeyboardMarkup(inline_keyboard=keyboard)
+@router.callback_query(lambda c: c.data == "start_onboarding")
+async def start_onboarding(call: CallbackQuery, state: FSMContext):
+    """Начало процесса онбординга после нажатия кнопки Начать"""
+    try:
+        await call.message.edit_text(
+            "📌 <b>Добавьте первый канал или группу</b>\n\n"
+            "Чтобы начать работу с ботом, необходимо добавить канал "
+            "или группу, где бот будет публиковать контент.\n\n"
+            "⚠️ Для работы бот должен быть администратором с правами "
+            "на публикацию сообщений.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="+ Добавить канал", callback_data="add_channel")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Error in start_onboarding: {e}")
+        await call.answer("Произошла ошибка. Пожалуйста, попробуйте снова.")
