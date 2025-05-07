@@ -408,5 +408,84 @@ async def cmd_channels(message: Message):
         )
         
     except Exception as e:
+        
         logger.error(f"Error in cmd_channels handler: {e}")
         await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("select_channel_"))
+async def process_channel_selection(call: CallbackQuery, state: FSMContext):
+    """Обработка выбора канала/группы"""
+    user_id = call.from_user.id
+    
+    try:
+        # Логирование для отладки
+        logger.info(f"Select channel callback received: {call.data}")
+        
+        # Извлекаем ID канала из данных коллбэка
+        channel_id = int(call.data.split("_")[2])
+        logger.info(f"Extracted channel_id: {channel_id}")
+        
+        async with AsyncSessionLocal() as session:
+            # Получаем информацию о канале
+            channel_q = select(Group).filter(Group.id == channel_id)
+            channel_result = await session.execute(channel_q)
+            channel = channel_result.scalar_one_or_none()
+            
+            if not channel:
+                logger.error(f"Channel with id {channel_id} not found")
+                await call.answer("⚠️ Выбранный канал не найден.")
+                return
+            
+            logger.info(f"Found channel: {channel.title}, chat_id: {channel.chat_id}")
+            
+            # Обновляем текущий выбранный канал пользователя
+            user_q = select(User).filter(User.user_id == user_id)
+            user_result = await session.execute(user_q)
+            user = user_result.scalar_one_or_none()
+            
+            if user:
+                user.current_chat_id = channel.chat_id
+                await session.commit()
+                logger.info(f"Updated user current_chat_id to {channel.chat_id}")
+            
+            # Создаем клавиатуру с основными действиями
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="✨ Создать пост")],
+                    [KeyboardButton(text="📅 Контент план"), KeyboardButton(text="📋 История")],
+                    [KeyboardButton(text="📊 Таблицы"), KeyboardButton(text="⚙️ Настройки")],
+                    [KeyboardButton(text="🔙 Сменить группу")]
+                ],
+                resize_keyboard=True,
+                is_persistent=True
+            )
+            
+            # Отправляем уведомление о выборе канала
+            try:
+                await call.message.edit_text(
+                    f"✅ Канал \"{channel.title}\" выбран!\n\n"
+                    f"Выберите действие:"
+                )
+            except Exception as edit_error:
+                logger.error(f"Error editing message: {edit_error}")
+                # Если не удалось отредактировать сообщение, отправляем новое
+                await call.message.answer(
+                    f"✅ Канал \"{channel.title}\" выбран!\n\n"
+                    f"Выберите действие:"
+                )
+            
+            # Отправляем новое сообщение с клавиатурой
+            await call.message.answer(
+                f"Работаем с каналом: \"{channel.title}\"",
+                reply_markup=keyboard
+            )
+            
+            # Отвечаем на коллбэк, чтобы убрать "часики" на кнопке
+            await call.answer()
+            
+    except Exception as e:
+        logger.error(f"Error selecting channel: {e}")
+        await call.answer("⚠️ Произошла ошибка при выборе канала. Пожалуйста, попробуйте позже.")
+        # Отправляем сообщение в чат с описанием ошибки
+        await call.message.answer(f"Произошла ошибка: {str(e)}")
+
