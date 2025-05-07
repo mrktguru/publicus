@@ -93,71 +93,7 @@ async def sheets_menu(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Error showing sheets menu: {e}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
-# handlers/google_sheets.py (продолжение)
-@router.callback_query(lambda c: c.data == "add_sheet")
-@router.message(Command('addsheet'))
-async def add_sheet_start(message: Message | CallbackQuery, state: FSMContext):
-    """Начало процесса добавления новой таблицы."""
-    # Определяем, какой был источник команды - коллбэк или сообщение
-    is_callback = isinstance(message, CallbackQuery)
-    
-    if is_callback:
-        user_id = message.from_user.id
-        actual_message = message.message
-    else:
-        user_id = message.from_user.id
-        actual_message = message
-    
-    try:
-        async with AsyncSessionLocal() as session:
-            # Получаем текущий выбранный канал пользователя
-            user_q = select(User).filter(User.user_id == user_id)
-            user_result = await session.execute(user_q)
-            user = user_result.scalar_one_or_none()
-            
-            if not user or not user.current_chat_id:
-                if is_callback:
-                    await message.answer("⚠️ Сначала выберите канал или группу")
-                else:
-                    await actual_message.answer(
-                        "⚠️ Сначала выберите канал или группу для работы.\n"
-                        "Используйте кнопку 'Сменить группу' в главном меню."
-                    )
-                return
-            
-            # Сохраняем канал в состоянии
-            await state.update_data(sheet_channel_id=user.current_chat_id)
-            
-            instructions_text = (
-                "📊 <b>Подключение Google Таблицы</b>\n\n"
-                "Для подключения таблицы выполните следующие шаги:\n\n"
-                "1. Создайте таблицу в Google Sheets\n"
-                "2. Добавьте в таблицу листы 'Контент-план' и 'История'\n"
-                "3. В лист 'Контент-план' добавьте столбцы:\n"
-                "   - ID\n"
-                "   - Канал/Группа\n"
-                "   - Дата публикации (ДД.ММ.ГГГГ)\n"
-                "   - Время публикации (ЧЧ:ММ)\n"
-                "   - Заголовок\n"
-                "   - Текст\n"
-                "   - Медиа\n"
-                "   - Статус\n"
-                "   - Комментарии\n\n"
-                "4. Откройте доступ к таблице для следующего email:\n"
-                "<code>service-account@your-project.iam.gserviceaccount.com</code>\n\n"
-                "Теперь отправьте полный URL таблицы в формате:\n"
-                "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit"
-            )
-            
-            if is_callback:
-                await message.message.edit_text(
-                    text=instructions_text,
-                    parse_mode="HTML"
-                )
-            else:
-                await actual_message.answer(
-                    text=instructions_
-    # handlers/google_sheets.py (продолжение)
+
 @router.callback_query(lambda c: c.data == "add_sheet")
 @router.message(Command('addsheet'))
 async def add_sheet_start(message: Message | CallbackQuery, state: FSMContext):
@@ -234,7 +170,7 @@ async def add_sheet_start(message: Message | CallbackQuery, state: FSMContext):
             await message.answer(error_message)
         else:
             await actual_message.answer(error_message)
-# handlers/google_sheets.py (продолжение)
+
 @router.message(GoogleSheetStates.waiting_for_url)
 async def process_sheet_url(message: Message, state: FSMContext):
     """Обработка URL таблицы."""
@@ -374,7 +310,7 @@ async def process_sync_interval(message: Message, state: FSMContext):
             f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
         )
         await state.clear()
-# handlers/google_sheets.py (продолжение)
+
 @router.callback_query(lambda c: c.data == "sync_sheets_now")
 @router.message(Command('syncsheet'))
 async def sync_sheets_now(message: Message | CallbackQuery):
@@ -423,7 +359,7 @@ async def sync_sheets_now(message: Message | CallbackQuery):
                 return
             
             # Сообщаем о начале синхронизации
-            response_text = "🔄 Начинаю синхронизацию таблиц...\n\n"
+            response_text = "🔄 Начинаю синхронизацию таблиц..."
             
             if is_callback:
                 await message.answer(response_text)
