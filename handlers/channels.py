@@ -22,7 +22,6 @@ class ChannelStates(StatesGroup):
     waiting_for_channel_username = State()
     waiting_for_group_command = State()
     waiting_for_display_name = State()
-
 @router.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_callback(call: CallbackQuery, state: FSMContext):
     """Обработчик inline-кнопки для добавления канала"""
@@ -69,6 +68,7 @@ async def process_add_channel(call: CallbackQuery, state: FSMContext):
         ])
     )
     await state.set_state(ChannelStates.waiting_for_channel_message)
+
 @router.callback_query(lambda c: c.data == "add_group_type")
 async def process_add_group(call: CallbackQuery, state: FSMContext):
     """Обработчик для добавления группы"""
@@ -98,7 +98,6 @@ async def back_to_add_select(call: CallbackQuery, state: FSMContext):
         ])
     )
     await state.clear()
-
 @router.message(ChannelStates.waiting_for_channel_message)
 async def process_channel_message(message: Message, state: FSMContext):
     """Обработка пересланного сообщения из канала"""
@@ -114,11 +113,12 @@ async def process_channel_message(message: Message, state: FSMContext):
         )
         await state.set_state(ChannelStates.waiting_for_display_name)
         return
+    
     # Если пользователь переслал сообщение из канала
     if message.forward_from_chat and message.forward_from_chat.type == "channel":
         channel_id = message.forward_from_chat.id
         channel_title = message.forward_from_chat.title
-        channel_username = message.forward_from_chat.username
+        channel_username_value = message.forward_from_chat.username
         
         try:
             async with AsyncSessionLocal() as session:
@@ -144,10 +144,11 @@ async def process_channel_message(message: Message, state: FSMContext):
                 new_group = Group(
                     chat_id=channel_id,
                     title=channel_title,
-                    username=channel_username,
-                    display_name=channel_title,  # По умолчанию используем оригинальное название
+                    username=channel_username_value,
+                    display_name=channel_title,
                     type="channel",
-                    added_by=user_id
+                    added_by=user_id,
+                    is_active=True
                 )
                 
                 session.add(new_group)
@@ -206,7 +207,8 @@ async def process_display_name(message: Message, state: FSMContext):
     try:
         async with AsyncSessionLocal() as session:
             # Проверяем, не добавлен ли уже канал с таким username
-            existing_group_q = select(Group).filter(Group.username == channel_username.lstrip('@'))
+            username_without_at = channel_username.lstrip('@') if channel_username else None
+            existing_group_q = select(Group).filter(Group.username == username_without_at)
             existing_group_result = await session.execute(existing_group_q)
             existing_group = existing_group_result.scalar_one_or_none()
             
@@ -222,10 +224,11 @@ async def process_display_name(message: Message, state: FSMContext):
             new_group = Group(
                 chat_id=0,  # Временно, будет обновлено позже
                 title=display_name,
-                username=channel_username.lstrip('@'),
+                username=username_without_at,
                 display_name=display_name,
                 type="channel",
-                added_by=user_id
+                added_by=user_id,
+                is_active=True
             )
             
             session.add(new_group)
@@ -304,6 +307,7 @@ async def connect_group(message: Message):
                 "⚠️ Только администраторы группы могут использовать эту команду."
             )
             return
+        
         async with AsyncSessionLocal() as session:
             # Проверяем, зарегистрирована ли уже эта группа
             existing_group_q = select(Group).filter(Group.chat_id == chat_id)
@@ -327,9 +331,10 @@ async def connect_group(message: Message):
                 chat_id=chat_id,
                 title=chat_title,
                 username=message.chat.username,
-                display_name=chat_title,  # По умолчанию используем оригинальное название
+                display_name=chat_title,
                 type="group",
-                added_by=user_id
+                added_by=user_id,
+                is_active=True
             )
             
             session.add(new_group)
@@ -413,6 +418,7 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error selecting channel: {e}")
         await call.answer("⚠️ Произошла ошибка при выборе канала. Пожалуйста, попробуйте позже.")
+
 @router.message(lambda m: m.text == "Сменить группу")
 async def change_group(message: Message):
     """Обработка кнопки 'Сменить группу' из основного меню"""
