@@ -19,6 +19,9 @@ from handlers import (
     pending,
     queue,
     history,
+    users,  # Новый обработчик для пользователей
+    channels,  # Новый обработчик для каналов
+    google_sheets,  # Новый обработчик для Google Sheets
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +34,9 @@ scheduler = AsyncIOScheduler()
 async def main():
     # регистрируем роутеры
     dp.include_router(start.router)
+    dp.include_router(users.router)  # Добавляем новый роутер
+    dp.include_router(channels.router)  # Добавляем новый роутер
+    dp.include_router(google_sheets.router)  # Добавляем новый роутер
     dp.include_router(group_select.router)
     dp.include_router(group_settings.router)
     dp.include_router(manual_post.router)
