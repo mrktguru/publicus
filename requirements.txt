@@ -1,6 +1,11 @@
 aiogram==3.1.1
 SQLAlchemy==2.0.23
-openai>=1.0.0  # Обновлено до новой версии
+openai>=1.0.0
 apscheduler==3.10.4
 aiosqlite
 python-dotenv>=1.0.0
+# Новые зависимости
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=0.4.1
+zoneinfo
