@@ -89,4 +89,8 @@ def prepare_media_urls(media_str):
     
     try:
         # Разделяем строку по запятым и удаляем пробелы
-        media_urls = 
+        media_urls = [url.strip() for url in media_str.split(',') if url.strip()]
+        return media_urls
+    except Exception as e:
+        logger.error(f"Error preparing media URLs: {e}")
+        return []
