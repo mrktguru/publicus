@@ -11,28 +11,17 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from database.db import AsyncSessionLocal
 from database.models import User, Group
-from utils.keyboards import create_channels_keyboard, create_main_keyboard
+from utils.keyboards import create_channels_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
 
 class ChannelStates(StatesGroup):
-    """Состояния для процесса добавления и управления каналами/группами"""
+    """Состояния для управления каналами/группами"""
     waiting_for_channel_message = State()
     waiting_for_channel_username = State()
     waiting_for_group_command = State()
     waiting_for_display_name = State()
-
-async def validate_channel_ownership(user_id: int, chat_id: int) -> bool:
-    """Проверяет, принадлежит ли канал пользователю"""
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Group).where(
-                Group.chat_id == chat_id,
-                Group.added_by == user_id
-            )
-        )
-        return result.scalar_one_or_none() is not None
 
 async def update_user_current_chat(user_id: int, chat_id: int):
     """Обновляет текущий выбранный чат пользователя"""
@@ -69,7 +58,7 @@ async def process_add_channel(call: CallbackQuery, state: FSMContext):
     """Обработчик для добавления канала"""
     try:
         await state.update_data(adding_type="channel")
-        bot_username = call.bot.username
+        bot_username = (await call.bot.get_me()).username  # Получаем username бота правильно
         await call.message.edit_text(
             f"📣 <b>Добавление нового канала</b>\n\n"
             f"Для добавления канала выполните следующие шаги:\n\n"
@@ -90,67 +79,48 @@ async def process_add_channel(call: CallbackQuery, state: FSMContext):
 
 @router.message(ChannelStates.waiting_for_channel_message)
 async def process_channel_message(message: Message, state: FSMContext):
-    """Обработка пересланного сообщения из канала или @username"""
-    user_id = message.from_user.id
-    
+    """Обработка пересланного сообщения из канала"""
     try:
-        # Обработка @username канала
         if message.text and message.text.startswith('@'):
             channel_username = message.text.strip()
             if not re.match(r'^@[a-zA-Z0-9_]{5,32}$', channel_username):
-                await message.answer("⚠️ Некорректный username канала. Должен начинаться с @ и содержать 5-32 символов (a-z, 0-9, _)")
+                await message.answer("⚠️ Некорректный username канала.")
                 return
                 
             await state.update_data(channel_username=channel_username)
-            await message.answer(
-                f"🔄 Обрабатываю канал {channel_username}...\n\n"
-                f"Пожалуйста, введите удобное название для этого канала:"
-            )
+            await message.answer("Введите название для канала:")
             await state.set_state(ChannelStates.waiting_for_display_name)
             return
 
-        # Обработка пересланного сообщения
         if not message.forward_from_chat or message.forward_from_chat.type != "channel":
-            await message.answer(
-                "⚠️ Это не пересланное сообщение из канала. Пожалуйста, перешлите сообщение из канала "
-                "или отправьте @username публичного канала."
-            )
+            await message.answer("⚠️ Пожалуйста, перешлите сообщение из канала.")
             return
 
         chat = message.forward_from_chat
         async with AsyncSessionLocal() as session:
-            # Проверка существования канала
             existing_group = await session.execute(
                 select(Group).where(Group.chat_id == chat.id)
             )
             if existing_group.scalar_one_or_none():
-                await message.answer("⚠️ Этот канал уже добавлен в систему.")
+                await message.answer("⚠️ Этот канал уже добавлен.")
                 await state.clear()
                 return
 
-            # Добавление нового канала
             new_group = Group(
                 chat_id=chat.id,
                 title=chat.title,
                 username=chat.username,
-                display_name=chat.title,
                 type="channel",
-                added_by=user_id,
+                added_by=message.from_user.id,
                 is_active=True
             )
             session.add(new_group)
             await session.commit()
+            await update_user_current_chat(message.from_user.id, chat.id)
 
-            # Обновление текущего чата пользователя
-            await update_user_current_chat(user_id, chat.id)
-
-            await message.answer(
-                f"✅ Канал \"{chat.title}\" успешно добавлен!\n\n"
-                f"Теперь вы можете создавать контент для этого канала."
-            )
-
-            # Показ списка каналов
-            keyboard = await create_channels_keyboard(user_id)
+            await message.answer(f"✅ Канал \"{chat.title}\" успешно добавлен!")
+            
+            keyboard = await create_channels_keyboard(message.from_user.id)
             await message.answer(
                 "📝 <b>Выберите канал для работы</b>",
                 parse_mode="HTML",
@@ -162,6 +132,8 @@ async def process_channel_message(message: Message, state: FSMContext):
         logger.error(f"Error in process_channel_message: {e}")
         await message.answer("⚠️ Произошла ошибка при добавлении канала.")
         await state.clear()
+
+# ... (остальные обработчики остаются без изменений)
 
 @router.message(ChannelStates.waiting_for_display_name)
 async def process_display_name(message: Message, state: FSMContext):
