@@ -470,19 +470,6 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 resize_keyboard=True,
                 is_persistent=True
             )
-
-            # Создаем клавиатуру с основными действиями
-            keyboard_inline = InlineKeyboardButton(
-                keyboard=[
-                    [InlineKeyboardButton(text="Создать пост")],
-                    [InlineKeyboardButton(text="Контент план (Очередь публикаций)")],
-                    [InlineKeyboardButton(text="История публикаций")],
-                    [InlineKeyboardButton(text="Таблицы Google Sheets")],
-                    [InlineKeyboardButton(text="↩️ Назад")]
-                ],
-                resize_keyboard=True,
-                is_persistent=True
-            )
             
             # Отправляем уведомление о выборе канала
             try:
