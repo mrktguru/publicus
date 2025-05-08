@@ -59,12 +59,12 @@ async def sheets_menu(message: Message, state: FSMContext):
                 ])
                 
                 # Логируем создание клавиатуры
-                logger.info("Creating keyboard for sheets with add_sheet and sync_sheets_now buttons")
+                logger.info("Creating keyboard for sheets with sheet_connect and sync_sheets_now buttons")
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="add_sheet")],
+                    [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")],
                     [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")]
                 ])
-                logger.info(f"Keyboard created with buttons: add_sheet, sync_sheets_now")
+                logger.info(f"Keyboard created with buttons: sheet_connect, sync_sheets_now")
                 
                 await message.answer(
                     f"📊 <b>Подключенные Google Таблицы</b>\n\n"
@@ -79,11 +79,11 @@ async def sheets_menu(message: Message, state: FSMContext):
                 )
             else:
                 # Логируем создание клавиатуры для пустого списка
-                logger.info("Creating keyboard for empty sheets list with add_sheet button")
+                logger.info("Creating keyboard for empty sheets list with sheet_connect button")
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="add_sheet")]
+                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
                 ])
-                logger.info(f"Keyboard created with button: add_sheet")
+                logger.info(f"Keyboard created with button: sheet_connect")
                 
                 await message.answer(
                     "📊 <b>Google Таблицы</b>\n\n"
@@ -103,29 +103,22 @@ async def sheets_menu(message: Message, state: FSMContext):
 
 # Обработчик для отладки всех коллбэков
 @router.callback_query()
-async def debug_callback(call: CallbackQuery):
+async def debug_callback(call: CallbackQuery, state: FSMContext):
     """Отладочный обработчик для всех коллбэков."""
     logger.info(f"Debug callback received: {call.data}")
     
     # Отдельно обрабатываем известные коллбэки
-    if call.data == "add_sheet":
-        await handle_add_sheet_callback(call)
+    if call.data == "sheet_connect" or call.data == "add_sheet":
+        await handle_add_sheet_callback(call, state)
     elif call.data == "sync_sheets_now":
         await handle_sync_sheets_callback(call)
     else:
         # Для неизвестных коллбэков показываем уведомление
         await call.answer(f"Получен коллбэк: {call.data}", show_alert=True)
 
-async def handle_add_sheet_callback(call: CallbackQuery):
+async def handle_add_sheet_callback(call: CallbackQuery, state: FSMContext):
     """Обработчик callback для добавления таблицы"""
-    logger.info("Processing add_sheet callback")
-    
-    # Использовать state из контекста обработчика
-    state = call.bot.state_storage_for(data=call.bot.data)
-    state_context = FSMContext(
-        storage=state,
-        key=call.bot.resolve_state_key(call.from_user.id, call.chat.id)
-    )
+    logger.info("Processing add_sheet/sheet_connect callback")
     
     user_id = call.from_user.id
     
@@ -141,7 +134,7 @@ async def handle_add_sheet_callback(call: CallbackQuery):
                 return
             
             # Сохраняем канал в состоянии
-            await state_context.update_data(sheet_channel_id=user.current_chat_id)
+            await state.update_data(sheet_channel_id=user.current_chat_id)
             
             instructions_text = (
                 "📊 <b>Подключение Google Таблицы</b>\n\n"
@@ -174,7 +167,7 @@ async def handle_add_sheet_callback(call: CallbackQuery):
             )
             
             # Устанавливаем состояние ожидания URL
-            await state_context.set_state(GoogleSheetStates.waiting_for_url)
+            await state.set_state(GoogleSheetStates.waiting_for_url)
             
     except Exception as e:
         logger.error(f"Error in handle_add_sheet_callback: {e}")
