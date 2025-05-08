@@ -95,18 +95,9 @@ async def sheets_menu(message: Message, state: FSMContext):
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
 
 @router.callback_query(lambda c: c.data == "add_sheet")
-@router.message(Command('addsheet'))
-async def add_sheet_start(message: Message | CallbackQuery, state: FSMContext):
-    """Начало процесса добавления новой таблицы."""
-    # Определяем, какой был источник команды - коллбэк или сообщение
-    is_callback = isinstance(message, CallbackQuery)
-    
-    if is_callback:
-        user_id = message.from_user.id
-        actual_message = message.message
-    else:
-        user_id = message.from_user.id
-        actual_message = message
+async def add_sheet_callback(call: CallbackQuery, state: FSMContext):
+    """Начало процесса добавления новой таблицы через inline-кнопку."""
+    user_id = call.from_user.id
     
     try:
         async with AsyncSessionLocal() as session:
@@ -116,13 +107,7 @@ async def add_sheet_start(message: Message | CallbackQuery, state: FSMContext):
             user = user_result.scalar_one_or_none()
             
             if not user or not user.current_chat_id:
-                if is_callback:
-                    await message.answer("⚠️ Сначала выберите канал или группу")
-                else:
-                    await actual_message.answer(
-                        "⚠️ Сначала выберите канал или группу для работы.\n"
-                        "Используйте кнопку 'Сменить группу' в главном меню."
-                    )
+                await call.answer("⚠️ Сначала выберите канал или группу", show_alert=True)
                 return
             
             # Сохраняем канал в состоянии
@@ -149,27 +134,76 @@ async def add_sheet_start(message: Message | CallbackQuery, state: FSMContext):
                 "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit"
             )
             
-            if is_callback:
-                await message.message.edit_text(
-                    text=instructions_text,
-                    parse_mode="HTML"
-                )
-            else:
-                await actual_message.answer(
-                    text=instructions_text,
-                    parse_mode="HTML"
-                )
+            # Важно: для коллбэков используем другой подход
+            # 1. Отправляем ответ на коллбэк, чтобы убрать "часики"
+            await call.answer()
+            
+            # 2. Отправляем новое сообщение с инструкциями, не редактируем текущее
+            await call.message.answer(
+                text=instructions_text,
+                parse_mode="HTML"
+            )
             
             await state.set_state(GoogleSheetStates.waiting_for_url)
             
     except Exception as e:
         logger.error(f"Error starting add sheet process: {e}")
-        error_message = "⚠️ Произошла ошибка при начале процесса добавления таблицы. Пожалуйста, попробуйте позже."
-        
-        if is_callback:
-            await message.answer(error_message)
-        else:
-            await actual_message.answer(error_message)
+        await call.answer("⚠️ Произошла ошибка. Попробуйте позже.", show_alert=True)
+
+
+@router.message(Command('addsheet'))
+async def add_sheet_command(message: Message, state: FSMContext):
+    """Начало процесса добавления новой таблицы через команду."""
+    user_id = message.from_user.id
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            # Получаем текущий выбранный канал пользователя
+            user_q = select(User).filter(User.user_id == user_id)
+            user_result = await session.execute(user_q)
+            user = user_result.scalar_one_or_none()
+            
+            if not user or not user.current_chat_id:
+                await message.answer(
+                    "⚠️ Сначала выберите канал или группу для работы.\n"
+                    "Используйте кнопку 'Сменить группу' в главном меню."
+                )
+                return
+            
+            # Сохраняем канал в состоянии
+            await state.update_data(sheet_channel_id=user.current_chat_id)
+            
+            instructions_text = (
+                "📊 <b>Подключение Google Таблицы</b>\n\n"
+                "Для подключения таблицы выполните следующие шаги:\n\n"
+                "1. Создайте таблицу в Google Sheets\n"
+                "2. Добавьте в таблицу листы 'Контент-план' и 'История'\n"
+                "3. В лист 'Контент-план' добавьте столбцы:\n"
+                "   - ID\n"
+                "   - Канал/Группа\n"
+                "   - Дата публикации (ДД.ММ.ГГГГ)\n"
+                "   - Время публикации (ЧЧ:ММ)\n"
+                "   - Заголовок\n"
+                "   - Текст\n"
+                "   - Медиа\n"
+                "   - Статус\n"
+                "   - Комментарии\n\n"
+                "4. Откройте доступ к таблице для следующего email:\n"
+                "<code>service-account@your-project.iam.gserviceaccount.com</code>\n\n"
+                "Теперь отправьте полный URL таблицы в формате:\n"
+                "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit"
+            )
+            
+            await message.answer(
+                text=instructions_text,
+                parse_mode="HTML"
+            )
+            
+            await state.set_state(GoogleSheetStates.waiting_for_url)
+            
+    except Exception as e:
+        logger.error(f"Error starting add sheet process: {e}")
+        await message.answer("⚠️ Произошла ошибка при начале процесса добавления таблицы. Пожалуйста, попробуйте позже.")
 
 @router.message(GoogleSheetStates.waiting_for_url)
 async def process_sheet_url(message: Message, state: FSMContext):
