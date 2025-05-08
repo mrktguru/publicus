@@ -4,7 +4,8 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, delete
 from database.db import AsyncSessionLocal
 from database.models import Group
-from keyboards.main import main_menu_kb
+# Заменяем импорт главного меню
+from utils.keyboards import create_main_keyboard
 import logging
 
 router = Router()
@@ -76,9 +77,11 @@ async def add_group_by_forward(message: Message, forwarded_chat: Chat, state: FS
             await state.set_data({"group_id": group_id, "chat_id": forwarded_chat.id})
             
             # Показываем основное меню без необходимости дополнительно нажимать /start
+            # Используем новую функцию
+            main_kb = await create_main_keyboard()
             await message.answer(
                 f"👍 Группа «{forwarded_chat.title}» выбрана для работы! Выберите действие:",
-                reply_markup=main_menu_kb()
+                reply_markup=main_kb
             )
     
     except Exception as e:
