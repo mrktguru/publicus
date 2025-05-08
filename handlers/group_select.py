@@ -4,7 +4,8 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from database.db import AsyncSessionLocal
 from database.models import Group
-from keyboards.main import main_menu_kb
+# Заменяем импорт главного меню
+from utils.keyboards import create_main_keyboard
 import logging
 
 print("🔎 handlers.group_select imported")
@@ -92,10 +93,11 @@ async def select_group(call: CallbackQuery, state: FSMContext):
         await state.set_data({"group_id": group_id})
         # убрать inline‑меню выбора
         await call.message.delete()
-        # показать основное reply‑меню
+        # показать основное reply‑меню с новой функцией
+        main_kb = await create_main_keyboard()
         await call.message.answer(
             "✅ Группа выбрана! Выберите действие:",
-            reply_markup=main_menu_kb()
+            reply_markup=main_kb
         )
     except Exception as e:
         logger.error(f"Error in select_group: {e}")
