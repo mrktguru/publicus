@@ -594,4 +594,22 @@ async def back_to_main_menu(call: CallbackQuery, state: FSMContext):
     
     await call.answer()
 
+@router.message(lambda m: m.text == "Настройки" or m.text == "⚙️ Настройки")
+async def settings_handler(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Настройки'"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Создаем inline клавиатуру для настроек
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🖊️ Изменить название", callback_data="settings_rename")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await message.answer(
+        f"⚙️ <b>Настройки канала \"{current_channel}\"</b>\n\n"
+        f"Выберите настройки для изменения:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
 
