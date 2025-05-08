@@ -24,6 +24,7 @@ class GoogleSheetStates(StatesGroup):
 @router.message(lambda m: m.text == "Таблицы")
 async def sheets_menu(message: Message, state: FSMContext):
     """Обработчик для меню Google Таблиц."""
+    logger.info("Entering sheets_menu function")
     # Получаем текущий выбранный канал
     user_id = message.from_user.id
     
@@ -57,10 +58,13 @@ async def sheets_menu(message: Message, state: FSMContext):
                     for i, sheet in enumerate(sheets)
                 ])
                 
+                # Логируем создание клавиатуры
+                logger.info("Creating keyboard for sheets with add_sheet and sync_sheets_now buttons")
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="add_sheet")],
                     [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")]
                 ])
+                logger.info(f"Keyboard created with buttons: add_sheet, sync_sheets_now")
                 
                 await message.answer(
                     f"📊 <b>Подключенные Google Таблицы</b>\n\n"
@@ -74,9 +78,12 @@ async def sheets_menu(message: Message, state: FSMContext):
                     reply_markup=keyboard
                 )
             else:
+                # Логируем создание клавиатуры для пустого списка
+                logger.info("Creating keyboard for empty sheets list with add_sheet button")
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="add_sheet")]
                 ])
+                logger.info(f"Keyboard created with button: add_sheet")
                 
                 await message.answer(
                     "📊 <b>Google Таблицы</b>\n\n"
@@ -94,9 +101,32 @@ async def sheets_menu(message: Message, state: FSMContext):
         logger.error(f"Error showing sheets menu: {e}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
 
-@router.callback_query(lambda c: c.data == "add_sheet")
-async def add_sheet_callback(call: CallbackQuery, state: FSMContext):
-    """Начало процесса добавления новой таблицы через inline-кнопку."""
+# Обработчик для отладки всех коллбэков
+@router.callback_query()
+async def debug_callback(call: CallbackQuery):
+    """Отладочный обработчик для всех коллбэков."""
+    logger.info(f"Debug callback received: {call.data}")
+    
+    # Отдельно обрабатываем известные коллбэки
+    if call.data == "add_sheet":
+        await handle_add_sheet_callback(call)
+    elif call.data == "sync_sheets_now":
+        await handle_sync_sheets_callback(call)
+    else:
+        # Для неизвестных коллбэков показываем уведомление
+        await call.answer(f"Получен коллбэк: {call.data}", show_alert=True)
+
+async def handle_add_sheet_callback(call: CallbackQuery):
+    """Обработчик callback для добавления таблицы"""
+    logger.info("Processing add_sheet callback")
+    
+    # Использовать state из контекста обработчика
+    state = call.bot.state_storage_for(data=call.bot.data)
+    state_context = FSMContext(
+        storage=state,
+        key=call.bot.resolve_state_key(call.from_user.id, call.chat.id)
+    )
+    
     user_id = call.from_user.id
     
     try:
@@ -111,7 +141,7 @@ async def add_sheet_callback(call: CallbackQuery, state: FSMContext):
                 return
             
             # Сохраняем канал в состоянии
-            await state.update_data(sheet_channel_id=user.current_chat_id)
+            await state_context.update_data(sheet_channel_id=user.current_chat_id)
             
             instructions_text = (
                 "📊 <b>Подключение Google Таблицы</b>\n\n"
@@ -134,26 +164,72 @@ async def add_sheet_callback(call: CallbackQuery, state: FSMContext):
                 "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit"
             )
             
-            # Важно: для коллбэков используем другой подход
-            # 1. Отправляем ответ на коллбэк, чтобы убрать "часики"
+            # Отправляем ответ на коллбэк
             await call.answer()
             
-            # 2. Отправляем новое сообщение с инструкциями, не редактируем текущее
+            # Отправляем новое сообщение с инструкциями
             await call.message.answer(
                 text=instructions_text,
                 parse_mode="HTML"
             )
             
-            await state.set_state(GoogleSheetStates.waiting_for_url)
+            # Устанавливаем состояние ожидания URL
+            await state_context.set_state(GoogleSheetStates.waiting_for_url)
             
     except Exception as e:
-        logger.error(f"Error starting add sheet process: {e}")
-        await call.answer("⚠️ Произошла ошибка. Попробуйте позже.", show_alert=True)
+        logger.error(f"Error in handle_add_sheet_callback: {e}")
+        await call.answer("⚠️ Произошла ошибка при начале процесса добавления таблицы", show_alert=True)
 
+async def handle_sync_sheets_callback(call: CallbackQuery):
+    """Обработчик callback для синхронизации таблиц"""
+    logger.info("Processing sync_sheets_now callback")
+    
+    user_id = call.from_user.id
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            # Получаем текущий выбранный канал пользователя
+            user_q = select(User).filter(User.user_id == user_id)
+            user_result = await session.execute(user_q)
+            user = user_result.scalar_one_or_none()
+            
+            if not user or not user.current_chat_id:
+                await call.answer("⚠️ Сначала выберите канал или группу", show_alert=True)
+                return
+            
+            channel_id = user.current_chat_id
+            
+            # Получаем информацию о подключенных таблицах для этого канала
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == True)
+            sheets_result = await session.execute(sheets_q)
+            sheets = sheets_result.scalars().all()
+            
+            if not sheets:
+                await call.answer("⚠️ У выбранного канала нет активных подключений к Google Таблицам", show_alert=True)
+                return
+            
+            # Сообщаем о начале синхронизации
+            await call.answer("🔄 Начинаю синхронизацию таблиц...", show_alert=True)
+            await call.message.answer("🔄 Начинаю синхронизацию таблиц...")
+            
+            # Запускаем синхронизацию каждой таблицы
+            from scheduler import check_google_sheets
+            
+            # Запускаем проверку таблиц
+            await check_google_sheets(call.bot)
+            
+            # Сообщаем о завершении синхронизации
+            await call.message.answer("✅ Синхронизация завершена успешно!")
+            
+    except Exception as e:
+        logger.error(f"Error syncing sheets: {e}")
+        await call.answer(f"❌ Ошибка при синхронизации таблиц", show_alert=True)
+        await call.message.answer(f"❌ Ошибка при синхронизации таблиц: {str(e)}")
 
 @router.message(Command('addsheet'))
 async def add_sheet_command(message: Message, state: FSMContext):
     """Начало процесса добавления новой таблицы через команду."""
+    logger.info("Received addsheet command")
     user_id = message.from_user.id
     
     try:
@@ -344,85 +420,6 @@ async def process_sync_interval(message: Message, state: FSMContext):
             f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
         )
         await state.clear()
-
-@router.callback_query(lambda c: c.data == "sync_sheets_now")
-@router.message(Command('syncsheet'))
-async def sync_sheets_now(message: Message | CallbackQuery):
-    """Ручной запуск синхронизации таблиц"""
-    # Определяем, какой был источник команды - коллбэк или сообщение
-    is_callback = isinstance(message, CallbackQuery)
-    
-    if is_callback:
-        user_id = message.from_user.id
-        actual_message = message.message
-    else:
-        user_id = message.from_user.id
-        actual_message = message
-    
-    try:
-        async with AsyncSessionLocal() as session:
-            # Получаем текущий выбранный канал пользователя
-            user_q = select(User).filter(User.user_id == user_id)
-            user_result = await session.execute(user_q)
-            user = user_result.scalar_one_or_none()
-            
-            if not user or not user.current_chat_id:
-                if is_callback:
-                    await message.answer("⚠️ Сначала выберите канал или группу")
-                else:
-                    await actual_message.answer(
-                        "⚠️ Сначала выберите канал или группу для работы.\n"
-                        "Используйте кнопку 'Сменить группу' в главном меню."
-                    )
-                return
-            
-            channel_id = user.current_chat_id
-            
-            # Получаем информацию о подключенных таблицах для этого канала
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == True)
-            sheets_result = await session.execute(sheets_q)
-            sheets = sheets_result.scalars().all()
-            
-            if not sheets:
-                response_text = "⚠️ У выбранного канала нет активных подключений к Google Таблицам."
-                
-                if is_callback:
-                    await message.answer(response_text)
-                else:
-                    await actual_message.answer(response_text)
-                return
-            
-            # Сообщаем о начале синхронизации
-            response_text = "🔄 Начинаю синхронизацию таблиц..."
-            
-            if is_callback:
-                await message.answer(response_text)
-                await actual_message.answer(response_text)
-            else:
-                processing_msg = await actual_message.answer(response_text)
-            
-            # Запускаем синхронизацию каждой таблицы
-            from scheduler import check_google_sheets
-            
-            # Запускаем проверку таблиц
-            await check_google_sheets(actual_message.bot)
-            
-            # Сообщаем о завершении синхронизации
-            response_text = "✅ Синхронизация завершена успешно!"
-            
-            if is_callback:
-                await actual_message.answer(response_text)
-            else:
-                await processing_msg.edit_text(response_text)
-            
-    except Exception as e:
-        logger.error(f"Error syncing sheets: {e}")
-        error_text = f"❌ Ошибка при синхронизации таблиц: {str(e)}"
-        
-        if is_callback:
-            await message.answer(error_text)
-        else:
-            await actual_message.answer(error_text)
 
 @router.message(Command('removesheet'))
 async def remove_sheet(message: Message):
