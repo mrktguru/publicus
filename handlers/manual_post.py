@@ -27,20 +27,32 @@ async def _start_manual_process(source: Union[Message, CallbackQuery], state: FS
     data = await state.get_data()
     
     if not data.get("group_id"):
-        await source.answer("❌ Сначала выберите группу через /start")
+        if isinstance(source, CallbackQuery):
+            await source.message.answer("❌ Сначала выберите группу через /start")
+            await source.answer()
+        else:
+            await source.answer("❌ Сначала выберите группу через /start")
         return
         
     try:
         async with AsyncSessionLocal() as session:
             group = await session.get(Group, data["group_id"])
             if not group:
-                await source.answer("❌ Группа не найдена")
+                if isinstance(source, CallbackQuery):
+                    await source.message.answer("❌ Группа не найдена")
+                    await source.answer()
+                else:
+                    await source.answer("❌ Группа не найдена")
                 return
                 
             await state.update_data(group_title=group.title)
     except Exception as e:
         logger.error(f"Error: {e}")
-        await source.answer("❌ Ошибка при проверке группы")
+        if isinstance(source, CallbackQuery):
+            await source.message.answer("❌ Ошибка при проверке группы")
+            await source.answer()
+        else:
+            await source.answer("❌ Ошибка при проверке группы")
         return
     
     await state.update_data(text=None, media_file_id=None)
@@ -51,6 +63,7 @@ async def _start_manual_process(source: Union[Message, CallbackQuery], state: FS
         ]
     )
     
+    # Исправленная часть: всегда используем отправку нового сообщения
     if isinstance(source, CallbackQuery):
         await source.message.answer(
             "✏️ Начинаем создание поста. Отправьте текст:",
@@ -71,14 +84,41 @@ async def _start_manual_process(source: Union[Message, CallbackQuery], state: FS
 async def start_manual(message: Message, state: FSMContext):
     await _start_manual_process(message, state)
 
-# Обработчик инлайн-кнопки
+# Новый обработчик для инлайн-кнопки "Создать пост"
 @router.callback_query(F.data == "post:create_manual")
-async def handle_create_manual(call: CallbackQuery, state: FSMContext):
+async def handle_create_manual_choice(call: CallbackQuery, state: FSMContext):
+    """Показывает меню выбора способа создания поста при нажатии на инлайн-кнопку"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Создаем inline клавиатуру для выбора типа создания поста
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Написать вручную", callback_data="post_manual")],
+        [InlineKeyboardButton(text="🤖 Сгенерировать с помощью ИИ", callback_data="post_auto")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await call.message.answer(
+        f"📝 <b>Создание поста в канале \"{current_channel}\"</b>\n\n"
+        f"Выберите способ создания поста:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+    await call.answer()
+
+# Обработчики для кнопок выбора способа создания поста
+@router.callback_query(F.data == "post_manual")
+async def handle_post_manual_start(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора ручного создания поста"""
     await _start_manual_process(call, state)
 
-
-
-
+@router.callback_query(F.data == "post_auto")
+async def handle_post_auto_start(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора создания поста с помощью ИИ"""
+    # Тут должна быть логика для создания поста с помощью ИИ
+    # Например, переход к форме запроса темы для генерации и т.д.
+    await call.message.answer("🤖 Генерация поста с помощью ИИ. Функция в разработке.")
+    await call.answer()
 
 
 
@@ -482,38 +522,3 @@ async def cancel_manual(call: CallbackQuery, state: FSMContext):
     
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
     await call.answer()
-
-# В файле handlers/manual_post.py добавьте или измените этот обработчик
-@router.callback_query(F.data == "post:create_manual")
-async def handle_create_manual_choice(call: CallbackQuery, state: FSMContext):
-    """Показывает меню выбора способа создания поста при нажатии на инлайн-кнопку"""
-    user_data = await state.get_data()
-    current_channel = user_data.get("current_channel_title", "текущем канале")
-    
-    # Создаем inline клавиатуру для выбора типа создания поста
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ Написать вручную", callback_data="post_manual")],
-        [InlineKeyboardButton(text="🤖 Сгенерировать с помощью ИИ", callback_data="post_auto")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
-    ])
-    
-    await call.message.answer(
-        f"📝 <b>Создание поста в канале \"{current_channel}\"</b>\n\n"
-        f"Выберите способ создания поста:",
-        parse_mode="HTML",
-        reply_markup=markup
-    )
-    await call.answer()
-@router.callback_query(F.data == "post_manual")
-async def handle_post_manual_start(call: CallbackQuery, state: FSMContext):
-    """Обработчик выбора ручного создания поста"""
-    await _start_manual_process(call, state)
-
-@router.callback_query(F.data == "post_auto")
-async def handle_post_auto_start(call: CallbackQuery, state: FSMContext):
-    """Обработчик выбора создания поста с помощью ИИ"""
-    # Тут должна быть логика для создания поста с помощью ИИ
-    # Например, переход к форме запроса темы для генерации и т.д.
-    await call.message.answer("🤖 Генерация поста с помощью ИИ. Функция в разработке.")
-    await call.answer()
-
