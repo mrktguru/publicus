@@ -613,3 +613,102 @@ async def settings_handler(message: Message, state: FSMContext):
         reply_markup=markup
     )
 
+@router.callback_query(lambda c: c.data == "post_manual")
+async def handle_post_manual(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора ручного создания поста"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Журналирование для отладки
+    logger.info(f"Starting manual post creation for channel: {current_channel}")
+    
+    # Просим пользователя ввести текст поста
+    await call.message.edit_text(
+        f"📝 <b>Создание поста вручную для канала \"{current_channel}\"</b>\n\n"
+        f"Введите текст вашего поста. Вы можете использовать стандартное форматирование Telegram:\n"
+        f"*жирный* _курсив_ `код` [ссылка](URL)",
+        parse_mode="HTML"
+    )
+    
+    # Добавляем кнопку отмены
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
+    ])
+    
+    await call.message.answer(
+        "Для отмены создания поста нажмите кнопку ниже:",
+        reply_markup=markup
+    )
+    
+    # Устанавливаем состояние ожидания текста поста
+    # Для этого используем состояние из states/post_states.py
+    from states.post_states import ManualPostStates
+    await state.set_state(ManualPostStates.waiting_for_content)
+    
+    await call.answer()
+
+@router.callback_query(lambda c: c.data == "post_auto")
+async def handle_post_auto(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора автоматического создания поста"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Журналирование для отладки
+    logger.info(f"Starting auto post generation for channel: {current_channel}")
+    
+    # Создаем клавиатуру для выбора режима генерации
+    kb = [
+        [InlineKeyboardButton(text="🔧 Конструктор (BASIC)", callback_data="mode_basic")],
+        [InlineKeyboardButton(text="📝 Свой промпт (PRO)", callback_data="mode_pro")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_create_options")]
+    ]
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=kb)
+    
+    await call.message.edit_text(
+        f"🤖 <b>Автоматическая генерация поста для канала \"{current_channel}\"</b>\n\n"
+        f"Выберите режим создания контента:\n\n"
+        f"🔧 <b>Конструктор (BASIC)</b> - пошаговая настройка параметров\n\n"
+        f"📝 <b>Свой промпт (PRO)</b> - напишите промпт самостоятельно",
+        reply_markup=markup,
+        parse_mode="HTML"
+    )
+    
+    # Устанавливаем состояние выбора режима генерации
+    from handlers.auto_generation import AutoGenStates
+    await state.set_state(AutoGenStates.mode_selection)
+    
+    await call.answer()
+
+@router.callback_query(lambda c: c.data == "cancel_post")
+async def cancel_post_creation(call: CallbackQuery, state: FSMContext):
+    """Отмена создания поста"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    await call.message.edit_text(
+        f"❌ Создание поста для канала \"{current_channel}\" отменено."
+    )
+    
+    # Возвращаемся к основному меню
+    await back_to_main(call, state)
+
+@router.callback_query(lambda c: c.data == "back_to_create_options")
+async def back_to_create_options(call: CallbackQuery, state: FSMContext):
+    """Возврат к выбору способа создания поста"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Создаем inline клавиатуру для выбора типа создания поста
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Написать вручную", callback_data="post_manual")],
+        [InlineKeyboardButton(text="🤖 Сгенерировать с помощью ИИ", callback_data="post_auto")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await call.message.edit_text(
+        f"📝 <b>Создание поста в канале \"{current_channel}\"</b>\n\n"
+        f"Выберите способ создания поста:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
