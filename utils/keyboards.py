@@ -9,8 +9,10 @@ async def create_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Создать пост")],
-            [KeyboardButton(text="Контент план"), KeyboardButton(text="История публикаций")],
-            [KeyboardButton(text="Таблицы"), KeyboardButton(text="Настройки")],
+            [KeyboardButton(text="Контент план")], 
+            [KeyboardButton(text="История публикаций")],
+            [KeyboardButton(text="Таблицы")], 
+            [KeyboardButton(text="Настройки")],
             [KeyboardButton(text="Сменить группу")]
         ],
         resize_keyboard=True,
