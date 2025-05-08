@@ -413,6 +413,7 @@ async def cmd_channels(message: Message):
         logger.error(f"Error in cmd_channels handler: {e}")
         await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
 
+# Обработчики выбора канала/группы
 @router.callback_query(lambda c: c.data and c.data.startswith("select_channel_"))
 async def process_channel_selection(call: CallbackQuery, state: FSMContext):
     """Обработка выбора канала/группы"""
@@ -449,7 +450,15 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 await session.commit()
                 logger.info(f"Updated user current_chat_id to {channel.chat_id}")
             
-            # Создаем клавиатуру с основными действиями - СОГЛАСОВАННЫЙ ДИЗАЙН
+            # Сохраняем данные о выбранном канале в состоянии
+            await state.update_data(
+                chat_id=channel.chat_id,
+                group_id=channel.id,  # Добавляем ID группы в состояние
+                current_channel_title=channel.title
+            )
+            logger.info(f"Saved group data to state: id={channel.id}, title={channel.title}, chat_id={channel.chat_id}")
+            
+            # Создаем клавиатуру с основными действиями
             keyboard = ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="Создать пост")],
@@ -481,9 +490,6 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 reply_markup=keyboard
             )
             
-            # Сохраняем название канала в состоянии, чтобы использовать его в других обработчиках
-            await state.update_data(current_channel_title=channel.title)
-            
             # Отвечаем на коллбэк, чтобы убрать "часики" на кнопке
             await call.answer()
             
@@ -492,6 +498,7 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
         await call.answer("⚠️ Произошла ошибка при выборе канала. Пожалуйста, попробуйте позже.")
         # Отправляем сообщение в чат с описанием ошибки
         await call.message.answer(f"Произошла ошибка: {str(e)}")
+
 
 # Обработчики для кнопок основного меню
 @router.message(lambda m: m.text == "Создать пост")
