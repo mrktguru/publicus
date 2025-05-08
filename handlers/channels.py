@@ -23,6 +23,7 @@ class ChannelStates(StatesGroup):
     waiting_for_channel_username = State()
     waiting_for_group_command = State()
     waiting_for_display_name = State()
+
 @router.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_callback(call: CallbackQuery, state: FSMContext):
     """Обработчик inline-кнопки для добавления канала"""
@@ -448,13 +449,13 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 await session.commit()
                 logger.info(f"Updated user current_chat_id to {channel.chat_id}")
             
-            # Создаем клавиатуру с основными действиями
+            # Создаем клавиатуру с основными действиями - СОГЛАСОВАННЫЙ ДИЗАЙН
             keyboard = ReplyKeyboardMarkup(
                 keyboard=[
-                    [KeyboardButton(text="✨ Создать пост")],
-                    [KeyboardButton(text="📅 Контент план"), KeyboardButton(text="📋 История")],
-                    [KeyboardButton(text="📊 Таблицы"), KeyboardButton(text="⚙️ Настройки")],
-                    [KeyboardButton(text="🔙 Сменить группу")]
+                    [KeyboardButton(text="Создать пост")],
+                    [KeyboardButton(text="Контент план (Очередь публикаций)"), KeyboardButton(text="История публикаций")],
+                    [KeyboardButton(text="Таблицы Google Sheets")],
+                    [KeyboardButton(text="↩️ Назад")]
                 ],
                 resize_keyboard=True,
                 is_persistent=True
@@ -480,6 +481,9 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 reply_markup=keyboard
             )
             
+            # Сохраняем название канала в состоянии, чтобы использовать его в других обработчиках
+            await state.update_data(current_channel_title=channel.title)
+            
             # Отвечаем на коллбэк, чтобы убрать "часики" на кнопке
             await call.answer()
             
@@ -488,4 +492,106 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
         await call.answer("⚠️ Произошла ошибка при выборе канала. Пожалуйста, попробуйте позже.")
         # Отправляем сообщение в чат с описанием ошибки
         await call.message.answer(f"Произошла ошибка: {str(e)}")
+
+# Обработчики для кнопок основного меню
+@router.message(lambda m: m.text == "Создать пост")
+async def create_post_handler(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Создать пост'"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Создаем inline клавиатуру для выбора типа создания поста
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Написать вручную", callback_data="post_manual")],
+        [InlineKeyboardButton(text="🤖 Сгенерировать с помощью ИИ", callback_data="post_auto")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await message.answer(
+        f"📝 <b>Создание поста в канале \"{current_channel}\"</b>\n\n"
+        f"Выберите способ создания поста:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@router.message(lambda m: m.text == "Контент план (Очередь публикаций)" or m.text == "Контент план")
+async def content_plan_handler(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Контент план'"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Здесь должен быть код для отображения контент-плана
+    await message.answer(
+        f"📅 <b>Контент план канала \"{current_channel}\"</b>\n\n"
+        f"Здесь будут отображаться запланированные публикации.",
+        parse_mode="HTML"
+    )
+
+@router.message(lambda m: m.text == "История публикаций")
+async def history_handler(message: Message, state: FSMContext):
+    """Обработчик кнопки 'История публикаций'"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Здесь должен быть код для отображения истории публикаций
+    await message.answer(
+        f"📋 <b>История публикаций канала \"{current_channel}\"</b>\n\n"
+        f"Здесь будет отображаться история опубликованных постов.",
+        parse_mode="HTML"
+    )
+
+@router.message(lambda m: m.text == "Таблицы Google Sheets" or m.text == "Таблицы")
+async def sheets_handler(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Таблицы Google Sheets'"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Создаем inline клавиатуру для действий с таблицами
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sheet_sync")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await message.answer(
+        f"📊 <b>Интеграция с Google Sheets для канала \"{current_channel}\"</b>\n\n"
+        f"Выберите действие с таблицами:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@router.message(lambda m: m.text == "↩️ Назад" or m.text == "🔙 Сменить группу" or m.text == "Сменить группу")
+async def back_to_channels_list(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Назад'/'Сменить группу'"""
+    user_id = message.from_user.id
+    
+    try:
+        # Создаем клавиатуру с каналами пользователя
+        keyboard = await create_channels_keyboard(user_id)
+        
+        await message.answer(
+            "📝 <b>Выберите канал или группу для работы</b>\n\n"
+            "Выберите одну из подключенных групп/каналов или добавьте новую.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in back_to_channels_list handler: {e}")
+        await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
+
+# Обработчики для inline кнопок
+@router.callback_query(lambda c: c.data == "back_to_main")
+async def back_to_main_menu(call: CallbackQuery, state: FSMContext):
+    """Возврат к основному меню"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    await call.message.edit_text(
+        f"Вы работаете с каналом \"{current_channel}\"\n\n"
+        f"Выберите действие в меню ниже."
+    )
+    
+    await call.answer()
+
 
