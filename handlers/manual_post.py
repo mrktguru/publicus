@@ -20,54 +20,56 @@ from keyboards.main import main_menu_kb
 router = Router()
 logger = logging.getLogger(__name__)
 
-# ── запуск сценария ────────────────────────────────────────────
-@router.message(F.text.startswith("✏️ Создать пост"))
-async def start_manual(message: Message, state: FSMContext):
-    logger.info("Handler start_manual triggered with message: %s", message.text)
+
+async def _start_manual_process(source: Union[Message, CallbackQuery], state: FSMContext):
+    """Общая функция для запуска ручного создания поста"""
     data = await state.get_data()
-    logger.info(f"Starting manual post with state data: {data}")
     
     if not data.get("group_id"):
-        logger.warning(f"No group_id in state data: {data}")
-        await message.answer("❌ Сначала выберите группу через /start")
+        await source.answer("❌ Сначала выберите группу через /start")
         return
         
-    # Проверим, действительно ли группа существует
     try:
         async with AsyncSessionLocal() as session:
             group = await session.get(Group, data["group_id"])
             if not group:
-                logger.warning(f"Group with ID {data['group_id']} not found")
-                await message.answer("❌ Выбранная группа не найдена. Пожалуйста, выберите группу снова через /start")
+                await source.answer("❌ Группа не найдена")
                 return
-            # Добавляем дополнительную информацию о группе в состояние
+                
             await state.update_data(group_title=group.title)
-            logger.info(f"Group found: {group.id} - {group.title}")
     except Exception as e:
-        logger.error(f"Error checking group existence: {e}")
-        await message.answer("❌ Произошла ошибка при проверке группы. Попробуйте выбрать группу снова через /start")
+        logger.error(f"Error: {e}")
+        await source.answer("❌ Ошибка при проверке группы")
         return
     
-    # Очищаем предыдущее состояние, если оно было
     await state.update_data(text=None, media_file_id=None)
     
-    # Создаем инлайн-кнопку "Отменить создание"
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отменить создание", callback_data="cancel_creation")],
         ]
     )
     
-    # Переходим к вводу текста поста и скрываем клавиатуру
-    await state.set_state(ManualPostStates.waiting_for_content)
-    await message.answer(
-        "💬 Отправьте текст поста или фотографию с текстом (подписью).\n\n"
-        "Вы можете:\n"
-        "• Отправить только текст\n"
-        "• Отправить фото с подписью\n"
-        "• Отправить текст, а затем фото (я объединю их)",
-        reply_markup=kb  # Добавляем инлайн-кнопку
+    await source.answer(
+        "✏️ Начинаем создание поста. Отправьте текст:",
+        reply_markup=kb
     )
+
+# Оригинальный обработчик
+@router.message(F.text.startswith("✏️ Создать пост"))
+async def start_manual(message: Message, state: FSMContext):
+    await _start_manual_process(message, state)
+
+# Обработчик инлайн-кнопки
+@router.callback_query(F.data == "post:create_manual")
+async def handle_create_manual(call: CallbackQuery, state: FSMContext):
+    await _start_manual_process(call, state)
+    await call.answer()
+
+
+
+
+
 
 # ── обработка текста ───────────────────────────────────────────
 @router.message(ManualPostStates.waiting_for_content, F.text)
