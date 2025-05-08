@@ -279,7 +279,7 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
     
     text = data.get("text", "")
     media_file_id = data.get("media_file_id")
-    group_pk = data.get("group_id")
+    group_pk = data.get("group_id")  # Используем group_id из состояния
 
     if not group_pk:
         await call.message.edit_text("❌ Ошибка: группа не выбрана. Пожалуйста, выберите группу через /start")
@@ -287,13 +287,19 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
         return
 
     # 1) Получаем chat_id
-    async with AsyncSessionLocal() as session:
-        group = await session.get(Group, group_pk)
-        if not group:
-            await call.message.edit_text("❌ Ошибка: выбранная группа не найдена.")
-            await state.clear()
-            return
-        chat_id = group.chat_id
+    try:
+        async with AsyncSessionLocal() as session:
+            group = await session.get(Group, group_pk)
+            if not group:
+                await call.message.edit_text("❌ Ошибка: выбранная группа не найдена.")
+                await state.clear()
+                return
+            chat_id = group.chat_id
+    except Exception as e:
+        logger.error(f"Error getting group: {e}")
+        await call.message.edit_text(f"❌ Ошибка при получении группы: {e}")
+        await state.clear()
+        return
 
     # 2) Проверяем содержимое
     if not text and not media_file_id:
@@ -336,7 +342,11 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("✅ Пост опубликован!")
     
     # Сохраняем group_id и group_title для следующих операций
-    await state.set_data({"group_id": group_pk, "group_title": group.title})
+    await state.set_data({
+        "group_id": group_pk, 
+        "chat_id": chat_id,
+        "current_channel_title": group.title
+    })
     
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
     await call.answer()
