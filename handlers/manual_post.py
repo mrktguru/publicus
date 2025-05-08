@@ -55,6 +55,8 @@ async def _start_manual_process(source: Union[Message, CallbackQuery], state: FS
         "✏️ Начинаем создание поста. Отправьте текст:",
         reply_markup=kb
     )
+    
+    await state.set_state(ManualPostStates.waiting_for_content)
 
 # Оригинальный обработчик
 @router.message(F.text.startswith("✏️ Создать пост"))
