@@ -16,7 +16,8 @@ import logging
 from database.db import AsyncSessionLocal
 from database.models import Post, Group
 from states.post_states import ManualPostStates
-from keyboards.main import main_menu_kb
+# Меняем импорт клавиатуры
+from utils.keyboards import create_main_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -320,7 +321,10 @@ async def cancel_creation(call: CallbackQuery, state: FSMContext):
     await state.set_data({"group_id": group_id, "group_title": group_title})
     
     await call.message.edit_text("❌ Создание поста отменено.")
-    await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    
+    # Используем новое меню вместо старого
+    main_kb = await create_main_keyboard()
+    await call.message.answer("Выберите действие:", reply_markup=main_kb)
     await call.answer()
 
 # ── публикация «сейчас» ────────────────────────────────────────
@@ -401,7 +405,9 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
         "current_channel_title": group.title
     })
     
-    await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    # Используем новое меню вместо старого
+    main_kb = await create_main_keyboard()
+    await call.message.answer("Выберите действие:", reply_markup=main_kb)
     await call.answer()
 
 # ── запрос времени для планирования ───────────────────────────
@@ -501,9 +507,15 @@ async def confirm_manual(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("✅ Пост запланирован!")
     
     # Сохраняем group_id и group_title для следующих операций
-    await state.set_data({"group_id": group_pk, "group_title": group.title})
+    await state.set_data({
+        "group_id": group_pk, 
+        "group_title": group.title,
+        "current_channel_title": group.title
+    })
     
-    await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    # Используем новое меню вместо старого
+    main_kb = await create_main_keyboard()
+    await call.message.answer("Выберите действие:", reply_markup=main_kb)
     await call.answer()
 
 # ── отмена ─────────────────────────────────────────────────────
@@ -518,7 +530,13 @@ async def cancel_manual(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("❌ Планирование отменено.")
     
     # Сохраняем group_id и group_title для следующих операций
-    await state.set_data({"group_id": group_id, "group_title": group_title})
+    await state.set_data({
+        "group_id": group_id, 
+        "group_title": group_title,
+        "current_channel_title": group_title
+    })
     
-    await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
+    # Используем новое меню вместо старого
+    main_kb = await create_main_keyboard()
+    await call.message.answer("Выберите действие:", reply_markup=main_kb)
     await call.answer()
