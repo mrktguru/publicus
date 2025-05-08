@@ -470,6 +470,19 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 resize_keyboard=True,
                 is_persistent=True
             )
+
+            # Создаем клавиатуру с основными действиями
+            keyboard_inline = InlineKeyboardButton(
+                keyboard=[
+                    [InlineKeyboardButton(text="Создать пост")],
+                    [InlineKeyboardButton(text="Контент план (Очередь публикаций)")],
+                    [InlineKeyboardButton(text="История публикаций")],
+                    [InlineKeyboardButton(text="Таблицы Google Sheets")],
+                    [InlineKeyboardButton(text="↩️ Назад")]
+                ],
+                resize_keyboard=True,
+                is_persistent=True
+            )
             
             # Отправляем уведомление о выборе канала
             try:
@@ -489,7 +502,11 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
             await call.message.answer(
                 f"Работаем с каналом: \"{channel.title}\"",
                 reply_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]    
+                    [InlineKeyboardButton(text="Создать пост", callback_data="create_post")]
+                    [InlineKeyboardButton(text="Контент план", callback_data="show_schedule")]
+                    [InlineKeyboardButton(text="История публикаций", callback_data="post_history")]
+                    [InlineKeyboardButton(text="Таблицы Google Sheets", callback_data="open_sheets_menu")]
+                    [InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")]
                 ])
             )
             # Отвечаем на коллбэк, чтобы убрать "часики" на кнопке
@@ -548,7 +565,8 @@ async def history_handler(message: Message, state: FSMContext):
         f"Здесь будет отображаться история опубликованных постов.",
         parse_mode="HTML"
     )
-
+# ОБРАБОТЧИК Таблицы Google Sheets для обычных кнопок и для инлайн НАЧАЛО
+ 
 @router.message(lambda m: m.text == "Таблицы Google Sheets" or m.text == "Таблицы")
 async def sheets_handler(message: Message, state: FSMContext):
     """Обработчик кнопки 'Таблицы Google Sheets'"""
@@ -568,6 +586,29 @@ async def sheets_handler(message: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=markup
     )
+
+@router.callback_query(F.data == "open_sheets_menu")  # Новый обработчик
+async def sheets_callback_handler(callback: CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sheet_sync")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await callback.message.answer(
+        f"📊 <b>Интеграция с Google Sheets для канала \"{current_channel}\"</b>\n\n"
+        f"Выберите действие с таблицами:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+    await callback.answer()
+
+# ОБРАБОТЧИК Таблицы Google Sheets для обычных кнопок и для инлайн КОНЕЦ
+
+
 
 @router.message(lambda m: m.text == "↩️ Назад" or m.text == "🔙 Сменить группу" or m.text == "Сменить группу")
 async def back_to_channels_list(message: Message, state: FSMContext):
