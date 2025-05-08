@@ -51,10 +51,20 @@ async def _start_manual_process(source: Union[Message, CallbackQuery], state: FS
         ]
     )
     
-    await source.answer(
-        "✏️ Начинаем создание поста. Отправьте текст:",
-        reply_markup=kb
-    )
+    if isinstance(source, CallbackQuery):
+        await source.message.answer(
+            "✏️ Начинаем создание поста. Отправьте текст:",
+            reply_markup=kb
+        )
+        await source.answer()  # Скрываем часики на кнопке
+    else:
+        await source.answer(
+            "✏️ Начинаем создание поста. Отправьте текст:",
+            reply_markup=kb
+        )
+    
+    # Добавляем эту строку для установки состояния
+    await state.set_state(ManualPostStates.waiting_for_content)
     
     await state.set_state(ManualPostStates.waiting_for_content)
 
@@ -67,7 +77,7 @@ async def start_manual(message: Message, state: FSMContext):
 @router.callback_query(F.data == "post:create_manual")
 async def handle_create_manual(call: CallbackQuery, state: FSMContext):
     await _start_manual_process(call, state)
-    await call.answer()
+
 
 
 
