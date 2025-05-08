@@ -489,7 +489,7 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
             await call.message.answer(
                 f"Работаем с каналом: \"{channel.title}\"",
                 reply_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="Создать пост", callback_data="create_post")],
+                    [InlineKeyboardButton(text="Создать пост", callback_data="post:create_manual")],
                     [InlineKeyboardButton(text="Контент план", callback_data="show_schedule")],
                     [InlineKeyboardButton(text="История публикаций", callback_data="post_history")],
                     [InlineKeyboardButton(text="Таблицы Google Sheets", callback_data="open_sheets_menu")],
