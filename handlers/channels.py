@@ -462,7 +462,8 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
             keyboard = ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="Создать пост")],
-                    [KeyboardButton(text="Контент план (Очередь публикаций)"), KeyboardButton(text="История публикаций")],
+                    [KeyboardButton(text="Контент план (Очередь публикаций)"), 
+                     KeyboardButton(text="История публикаций")],
                     [KeyboardButton(text="Таблицы Google Sheets")],
                     [KeyboardButton(text="↩️ Назад")]
                 ],
@@ -601,6 +602,7 @@ async def back_to_main_menu(call: CallbackQuery, state: FSMContext):
     
     await call.answer()
 
+# обработчик кнопки НАСТРОЙКИ
 @router.message(lambda m: m.text == "Настройки" or m.text == "⚙️ Настройки")
 async def settings_handler(message: Message, state: FSMContext):
     """Обработчик кнопки 'Настройки'"""
