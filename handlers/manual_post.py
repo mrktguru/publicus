@@ -1,3 +1,4 @@
+from typing import Union  # Добавьте этот импорт
 from aiogram import Router, F
 from aiogram.types import (
     Message,
