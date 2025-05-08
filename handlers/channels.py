@@ -462,8 +462,8 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
             keyboard = ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="Создать пост")],
-                    [KeyboardButton(text="Контент план (Очередь публикаций)"), 
-                     KeyboardButton(text="История публикаций")],
+                    [KeyboardButton(text="Контент план (Очередь публикаций)")],
+                    [KeyboardButton(text="История публикаций")],
                     [KeyboardButton(text="Таблицы Google Sheets")],
                     [KeyboardButton(text="↩️ Назад")]
                 ],
