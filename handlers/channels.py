@@ -491,7 +491,7 @@ async def process_channel_selection(call: CallbackQuery, state: FSMContext):
                 reply_markup = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_add_select")]    
                 ])
-            
+            )
             # Отвечаем на коллбэк, чтобы убрать "часики" на кнопке
             await call.answer()
             
