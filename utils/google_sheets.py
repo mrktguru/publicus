@@ -5,13 +5,16 @@ import logging
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
-from config import GOOGLE_CREDS_FILE
+from config import GOOGLE_CREDS_FILE, GOOGLE_SERVICE_ACCOUNT_EMAIL
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
 class GoogleSheetsClient:
     """Клиент для работы с Google Sheets API"""
+    
+    # Добавляем константу с email сервисного аккаунта из конфига
+    SERVICE_ACCOUNT = GOOGLE_SERVICE_ACCOUNT_EMAIL
     
     def __init__(self, credentials_file=None):
         """
@@ -57,6 +60,32 @@ class GoogleSheetsClient:
             list: Список строк с данными
         """
         try:
+            # Если range_name содержит кириллицу, кодируем его правильно
+            if "!" in range_name:
+                sheet_name, cell_range = range_name.split("!")
+                # Пробуем использовать имя листа по индексу вместо по названию
+                # Сначала получим список всех листов
+                metadata = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+                sheets = metadata.get('sheets', [])
+                sheet_found = False
+                
+                # Ищем лист по названию
+                for sheet in sheets:
+                    if sheet['properties']['title'] == sheet_name:
+                        # Если нашли, используем кавычки для названия листа
+                        range_name = f"'{sheet_name}'!{cell_range}"
+                        sheet_found = True
+                        break
+                
+                if not sheet_found:
+                    # Если лист не найден, пробуем первый лист
+                    logger.warning(f"Sheet '{sheet_name}' not found, using first sheet instead")
+                    if sheets:
+                        first_sheet_name = sheets[0]['properties']['title']
+                        range_name = f"'{first_sheet_name}'!{cell_range}"
+                    else:
+                        raise Exception(f"No sheets found in spreadsheet {spreadsheet_id}")
+            
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=spreadsheet_id,
                 range=range_name
@@ -79,6 +108,11 @@ class GoogleSheetsClient:
             dict: Результат операции
         """
         try:
+            # Если range_name содержит кириллицу, форматируем корректно
+            if "!" in range_name:
+                sheet_name, cell_range = range_name.split("!")
+                range_name = f"'{sheet_name}'!{cell_range}"
+                
             body = {
                 'values': [[value]]
             }
@@ -93,6 +127,166 @@ class GoogleSheetsClient:
             logger.error(f"Error updating cell in sheet {spreadsheet_id}, range {range_name}: {e}")
             raise
     
+    def create_sheet_structure(self, spreadsheet_id):
+        """
+        Создает необходимую структуру в таблице: листы и заголовки столбцов.
+        
+        Args:
+            spreadsheet_id: ID Google Таблицы
+            
+        Returns:
+            bool: Успешно ли создана структура
+        """
+        try:
+            logger.info(f"Creating structure for spreadsheet {spreadsheet_id}")
+            
+            # 1. Проверяем, существуют ли уже нужные листы
+            metadata = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = metadata.get('sheets', [])
+            sheet_titles = [sheet['properties']['title'] for sheet in sheets]
+            
+            # Список листов, которые нужно создать
+            required_sheets = ['Контент-план', 'История']
+            sheets_to_create = [sheet for sheet in required_sheets if sheet not in sheet_titles]
+            
+            # 2. Создаем недостающие листы
+            if sheets_to_create:
+                requests = []
+                for sheet_title in sheets_to_create:
+                    requests.append({
+                        'addSheet': {
+                            'properties': {
+                                'title': sheet_title
+                            }
+                        }
+                    })
+                
+                # Отправляем запрос на создание листов
+                result = self.service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={'requests': requests}
+                ).execute()
+                
+                logger.info(f"Created sheets: {sheets_to_create}")
+                
+                # Получаем обновленные метаданные после создания листов
+                metadata = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            
+            # 3. Добавляем заголовки в Контент-план
+            content_plan_headers = [
+                ['ID', 'Канал/Группа', 'Дата публикации', 'Время публикации', 
+                'Заголовок', 'Текст', 'Медиа', 'Статус', 'Комментарии']
+            ]
+            self.service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range="'Контент-план'!A1:I1",
+                valueInputOption='RAW',
+                body={'values': content_plan_headers}
+            ).execute()
+            
+            # 4. Добавляем заголовки в Историю
+            history_headers = [
+                ['ID', 'Канал/Группа', 'Дата публикации', 'Время публикации', 
+                'Текст', 'Результат', 'Комментарии']
+            ]
+            self.service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range="'История'!A1:G1",
+                valueInputOption='RAW',
+                body={'values': history_headers}
+            ).execute()
+            
+            # 5. Форматируем заголовки (делаем жирным)
+            requests = []
+            
+            # Форматирование Контент-план
+            content_plan_sheet_id = self._get_sheet_id_by_name(metadata, 'Контент-план')
+            if content_plan_sheet_id is not None:
+                requests.append({
+                    'repeatCell': {
+                        'range': {
+                            'sheetId': content_plan_sheet_id,
+                            'startRowIndex': 0,
+                            'endRowIndex': 1
+                        },
+                        'cell': {
+                            'userEnteredFormat': {
+                                'textFormat': {
+                                    'bold': True
+                                },
+                                'backgroundColor': {
+                                    'red': 0.9,
+                                    'green': 0.9,
+                                    'blue': 0.9
+                                }
+                            }
+                        },
+                        'fields': 'userEnteredFormat(textFormat,backgroundColor)'
+                    }
+                })
+            
+            # Форматирование История
+            history_sheet_id = self._get_sheet_id_by_name(metadata, 'История')
+            if history_sheet_id is not None:
+                requests.append({
+                    'repeatCell': {
+                        'range': {
+                            'sheetId': history_sheet_id,
+                            'startRowIndex': 0,
+                            'endRowIndex': 1
+                        },
+                        'cell': {
+                            'userEnteredFormat': {
+                                'textFormat': {
+                                    'bold': True
+                                },
+                                'backgroundColor': {
+                                    'red': 0.9,
+                                    'green': 0.9,
+                                    'blue': 0.9
+                                }
+                            }
+                        },
+                        'fields': 'userEnteredFormat(textFormat,backgroundColor)'
+                    }
+                })
+            
+            # Автоматическая ширина столбцов
+            for sheet_name in required_sheets:
+                sheet_id = self._get_sheet_id_by_name(metadata, sheet_name)
+                if sheet_id is not None:
+                    requests.append({
+                        'autoResizeDimensions': {
+                            'dimensions': {
+                                'sheetId': sheet_id,
+                                'dimension': 'COLUMNS',
+                                'startIndex': 0,
+                                'endIndex': 9  # Количество столбцов
+                            }
+                        }
+                    })
+            
+            # Применяем форматирование, если есть запросы
+            if requests:
+                self.service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={'requests': requests}
+                ).execute()
+            
+            logger.info("Sheet structure created successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error creating sheet structure: {e}")
+            return False
+    
+    def _get_sheet_id_by_name(self, metadata, sheet_name):
+        """Получает ID листа по его названию"""
+        for sheet in metadata.get('sheets', []):
+            if sheet['properties']['title'] == sheet_name:
+                return sheet['properties']['sheetId']
+        return None
+        
     def get_upcoming_posts(self, spreadsheet_id, sheet_name="Контент-план"):
         """
         Получение постов, запланированных к публикации в ближайшее время.
@@ -107,7 +301,7 @@ class GoogleSheetsClient:
         logger.info(f"Looking for upcoming posts in sheet {spreadsheet_id}, sheet {sheet_name}")
         
         # Формируем диапазон для запроса всех данных листа (начиная со второй строки)
-        range_name = f"{sheet_name}!A2:I"
+        range_name = f"'{sheet_name}'!A2:I"
         
         try:
             data = self.get_sheet_data(spreadsheet_id, range_name)
@@ -192,7 +386,7 @@ class GoogleSheetsClient:
             row_index: Номер строки
             status: Новый статус
         """
-        range_name = f"{sheet_name}!H{row_index}"
+        range_name = f"'{sheet_name}'!H{row_index}"
         try:
             result = self.update_cell(spreadsheet_id, range_name, status)
             logger.info(f"Updated status for row {row_index} to '{status}'")
@@ -210,7 +404,7 @@ class GoogleSheetsClient:
             post_data: Данные о посте
             publish_result: Результат публикации
         """
-        history_range = "История!A:F"
+        history_range = "'История'!A:F"
         now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
         
         try:
