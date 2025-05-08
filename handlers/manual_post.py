@@ -65,8 +65,6 @@ async def _start_manual_process(source: Union[Message, CallbackQuery], state: FS
     
     # Добавляем эту строку для установки состояния
     await state.set_state(ManualPostStates.waiting_for_content)
-    
-    await state.set_state(ManualPostStates.waiting_for_content)
 
 # Оригинальный обработчик
 @router.message(F.text.startswith("✏️ Создать пост"))
@@ -484,3 +482,38 @@ async def cancel_manual(call: CallbackQuery, state: FSMContext):
     
     await call.message.answer("Выберите действие:", reply_markup=main_menu_kb())
     await call.answer()
+
+# В файле handlers/manual_post.py добавьте или измените этот обработчик
+@router.callback_query(F.data == "post:create_manual")
+async def handle_create_manual_choice(call: CallbackQuery, state: FSMContext):
+    """Показывает меню выбора способа создания поста при нажатии на инлайн-кнопку"""
+    user_data = await state.get_data()
+    current_channel = user_data.get("current_channel_title", "текущем канале")
+    
+    # Создаем inline клавиатуру для выбора типа создания поста
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Написать вручную", callback_data="post_manual")],
+        [InlineKeyboardButton(text="🤖 Сгенерировать с помощью ИИ", callback_data="post_auto")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+    ])
+    
+    await call.message.answer(
+        f"📝 <b>Создание поста в канале \"{current_channel}\"</b>\n\n"
+        f"Выберите способ создания поста:",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+    await call.answer()
+@router.callback_query(F.data == "post_manual")
+async def handle_post_manual_start(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора ручного создания поста"""
+    await _start_manual_process(call, state)
+
+@router.callback_query(F.data == "post_auto")
+async def handle_post_auto_start(call: CallbackQuery, state: FSMContext):
+    """Обработчик выбора создания поста с помощью ИИ"""
+    # Тут должна быть логика для создания поста с помощью ИИ
+    # Например, переход к форме запроса темы для генерации и т.д.
+    await call.message.answer("🤖 Генерация поста с помощью ИИ. Функция в разработке.")
+    await call.answer()
+
