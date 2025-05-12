@@ -36,15 +36,16 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(users.router)
     dp.include_router(channels.router)
-    dp.include_router(manual_post.router)  # Перемещаем перед google_sheets
+    dp.include_router(manual_post.router)
     dp.include_router(google_sheets.router)
     dp.include_router(group_select.router)
     dp.include_router(group_settings.router)
+    dp.include_router(history.router)
+    dp.include_router(queue.router)   
     dp.include_router(auto_generation.router)
     dp.include_router(moderation.router)
     dp.include_router(pending.router)
-    dp.include_router(queue.router)
-    dp.include_router(history.router)
+
 
     # планировщик
     setup_scheduler(scheduler, bot)
