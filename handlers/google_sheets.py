@@ -47,6 +47,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                 return
             
             channel_id = user.current_chat_id
+            logger.debug(f"User {user_id} working with channel_id: {channel_id}")
             
             # Получаем канал из БД
             channel_q = select(Group).filter(Group.chat_id == channel_id)
@@ -57,7 +58,9 @@ async def sheets_menu(message: Message, state: FSMContext):
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
-            # Проверяем наличие активных таблиц для этого канала
+            logger.debug(f"Channel found: {channel.title} (ID: {channel.chat_id})")
+            
+            # Проверяем наличие активных таблиц
             sheets_q = select(GoogleSheet).filter(
                 GoogleSheet.chat_id == channel_id,
                 GoogleSheet.is_active == True
@@ -65,15 +68,22 @@ async def sheets_menu(message: Message, state: FSMContext):
             sheets_result = await session.execute(sheets_q)
             active_sheets = sheets_result.scalars().all()
             
-            # ВАЖНО: явно считаем количество активных таблиц
+            # ДОБАВЛЯЕМ ПОДРОБНОЕ ЛОГИРОВАНИЕ
+            logger.debug(f"SQL query: {str(sheets_q)}")
+            
+            # Выводим все активные таблицы для отладки
+            for sheet in active_sheets:
+                logger.debug(f"Found active sheet: ID={sheet.id}, spreadsheet_id={sheet.spreadsheet_id}, is_active={sheet.is_active}")
+            
+            # Подсчитываем количество активных таблиц
             active_count = len(active_sheets)
             logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_count} active sheets")
             
-            # Создаем базовое сообщение
+            # Создаем сообщение
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # Создаем разные клавиатуры в зависимости от наличия таблиц
+            # Две разные клавиатуры в зависимости от наличия таблиц
             if active_count > 0:
                 # Есть активные таблицы - показываем функциональные кнопки
                 sheet = active_sheets[0]  # Берем первую активную таблицу
@@ -100,6 +110,7 @@ async def sheets_menu(message: Message, state: FSMContext):
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
+
 
 
 
