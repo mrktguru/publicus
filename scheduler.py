@@ -156,7 +156,7 @@ async def check_google_sheets(bot: Bot):
         
         async with AsyncSessionLocal() as session:
             # Получаем все активные подключения таблиц
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == True)
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == 1)  # Используйте 1 вместо True
             sheets_result = await session.execute(sheets_q)
             active_sheets = sheets_result.scalars().all()
             
@@ -265,6 +265,7 @@ async def check_google_sheets(bot: Bot):
             
     except Exception as e:
         log.error(f"Error checking Google Sheets: {e}")
+        
 
 
 async def publish_exact_post(bot: Bot, post_id: int):
