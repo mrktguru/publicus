@@ -101,22 +101,23 @@ async def sheets_menu(message: Message, state: FSMContext):
         logger.error(f"Error showing sheets menu: {e}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
 
-# Обработчик для отладки всех коллбэков
+# Обработчик для отладки всех коллбэков в google_sheets.py
 @router.callback_query()
-# Обработчик для отладки всех коллбэков
-@router.callback_query()
+
 async def debug_callback(call: CallbackQuery, state: FSMContext):
     """Отладочный обработчик для всех коллбэков."""
     logger.info(f"Debug callback received: {call.data}")
     
-    # Отдельно обрабатываем известные коллбэки
-    if call.data == "sheet_connect" or call.data == "add_sheet":
-        await handle_add_sheet_callback(call, state)
-    elif call.data == "sync_sheets_now":
-        await sync_sheets_now_callback(call)
+    # Обрабатываем только коллбэки, относящиеся к Google Sheets
+    if call.data in ["sheet_connect", "add_sheet", "sync_sheets_now"]:
+        if call.data == "sheet_connect" or call.data == "add_sheet":
+            await handle_add_sheet_callback(call, state)
+        elif call.data == "sync_sheets_now":
+            await sync_sheets_now_callback(call)
     else:
-        # Для неизвестных коллбэков показываем уведомление
-        await call.answer(f"Получен коллбэк: {call.data}", show_alert=True)
+        # Логируем остальные коллбэки, но не перехватываем их
+        logger.info(f"Ignoring callback: {call.data} (not related to sheets)")
+
 
 
 async def handle_add_sheet_callback(call: CallbackQuery, state: FSMContext):
