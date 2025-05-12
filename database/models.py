@@ -31,7 +31,7 @@ class Group(Base):
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)  # пользовательское название
     type: Mapped[str] = mapped_column(String, default="channel")  # channel или group
     added_by: Mapped[int] = mapped_column(BigInteger)  # ID пользователя, добавившего группу
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     date_added: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     last_post_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
