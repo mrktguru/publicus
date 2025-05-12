@@ -729,3 +729,20 @@ async def fix_sheets_confirm(call: CallbackQuery):
 async def fix_sheets_cancel(call: CallbackQuery):
     """Обработчик отмены удаления записей таблиц"""
     await call.message.edit_text("❌ Операция отменена. Записи таблиц не изменены.")
+
+@router.callback_query(lambda c: c.data == "back_to_main")
+async def back_to_main_menu(call: CallbackQuery):
+    """Обработчик для возврата в главное меню"""
+    # Создаем главную клавиатуру
+    from utils.keyboards import create_main_keyboard
+    main_kb = await create_main_keyboard()
+    
+    # Отправляем сообщение с главным меню
+    await call.message.answer("Выберите действие:", reply_markup=main_kb)
+    
+    # Скрываем инлайн-клавиатуру в предыдущем сообщении
+    await call.message.edit_reply_markup(reply_markup=None)
+    
+    # Отвечаем на колбэк
+    await call.answer()
+
