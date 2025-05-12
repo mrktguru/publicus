@@ -1,56 +1,49 @@
 import sqlite3
-import sys
+import json
 
 # Путь к файлу базы данных
 DB_FILE = "bot.db"
 
-def fix_channel_tables(channel_title=None):
-    """Исправляет таблицы для конкретного канала"""
-    if not channel_title:
-        print("Укажите название канала в кавычках, например: python fix_channel.py \"Ногомяч: все о футболе!\"")
-        return
-    
+def fix_sheets_problem():
+    """Функция для исправления проблемы с таблицами в базе данных"""
     # Подключаемся к базе данных
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # Находим канал по названию
-    cursor.execute("SELECT chat_id, title FROM groups WHERE title LIKE ?", (f"%{channel_title}%",))
-    channels = cursor.fetchall()
+    # Посчитаем количество активных таблиц
+    cursor.execute("SELECT COUNT(*) FROM google_sheets WHERE is_active = 1")
+    active_count = cursor.fetchone()[0]
     
-    if not channels:
-        print(f"Каналы с названием '{channel_title}' не найдены")
-        cursor.execute("SELECT chat_id, title FROM groups LIMIT 10")
-        existing = cursor.fetchall()
-        print("Доступные каналы:")
-        for chat_id, title in existing:
-            print(f"- {title} (ID: {chat_id})")
-        conn.close()
-        return
+    print(f"Всего активных таблиц в БД: {active_count}")
     
-    for chat_id, title in channels:
-        print(f"Найден канал: {title} (ID: {chat_id})")
-        
-        # Проверяем активные таблицы для этого канала
-        cursor.execute("SELECT id, spreadsheet_id FROM google_sheets WHERE chat_id = ? AND is_active = 1", (chat_id,))
-        active_sheets = cursor.fetchall()
-        
-        if active_sheets:
-            print(f"Найдено активных таблиц: {len(active_sheets)}")
-            for sheet_id, sheet_name in active_sheets:
-                print(f"- Таблица ID: {sheet_id}, Name: {sheet_name}")
-            
-            # Деактивируем все таблицы для этого канала
-            cursor.execute("UPDATE google_sheets SET is_active = 0 WHERE chat_id = ?", (chat_id,))
-            conn.commit()
-            print(f"Все таблицы для канала {title} деактивированы")
-        else:
-            print(f"Для канала {title} нет активных таблиц")
+    # Получаем информацию по каналам
+    cursor.execute("""
+        SELECT g.chat_id, g.title, COUNT(gs.id) 
+        FROM groups g 
+        LEFT JOIN google_sheets gs ON g.chat_id = gs.chat_id AND gs.is_active = 1
+        GROUP BY g.chat_id
+    """)
+    channel_stats = cursor.fetchall()
+    
+    print("\nСтатистика по каналам:")
+    for chat_id, title, sheets_count in channel_stats:
+        print(f"Канал '{title}' (ID: {chat_id}): активных таблиц - {sheets_count}")
+    
+    # Ставим все таблицы в неактивное состояние
+    cursor.execute("UPDATE google_sheets SET is_active = 0")
+    conn.commit()
+    
+    print("\nВсе таблицы помечены как неактивные")
+    
+    # Проверяем, что изменения применились
+    cursor.execute("SELECT COUNT(*) FROM google_sheets WHERE is_active = 1")
+    new_active_count = cursor.fetchone()[0]
+    
+    print(f"Активных таблиц после обновления: {new_active_count}")
     
     # Закрываем соединение
     conn.close()
-    print("Операция завершена. Перезапустите бота.")
 
 if __name__ == "__main__":
-    channel_name = sys.argv[1] if len(sys.argv) > 1 else None
-    fix_channel_tables(channel_name)
+    fix_sheets_problem()
+    print("Скрипт выполнен. Перезапустите бота.")
