@@ -75,15 +75,15 @@ async def sheets_menu(message: Message, state: FSMContext):
             if active_count > 0:
                 # Получаем первую активную таблицу
                 # Модифицированный код с исправлением
-                # ИСПОЛЬЗУЕМ ТОЛЬКО ORM-запрос для проверки наличия активных таблиц
+                # Убираем зависимость от SQL-запроса и используем только SQLAlchemy
                 sheets_q = select(GoogleSheet).filter(
                     GoogleSheet.chat_id == channel_id,
                     GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
                 )
                 sheets_result = await session.execute(sheets_q)
                 active_sheets = sheets_result.scalars().all()
-                        
-                if active_sheets:  # Полагаемся только на эту проверку
+                
+                if active_sheets:  # Есть активные таблицы через SQLAlchemy
                     sheet = active_sheets[0]
                     # Создаем клавиатуру С кнопкой синхронизации
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -92,15 +92,13 @@ async def sheets_menu(message: Message, state: FSMContext):
                         [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
-                else:
-                    # Если активных таблиц нет
+                else:  # Нет активных таблиц через SQLAlchemy
                     # Создаем клавиатуру БЕЗ кнопки синхронизации
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
-                
-                # Убираем SQL-запрос, который может давать неверный результат
+
                 
 
             
