@@ -90,22 +90,26 @@ async def check_scheduled_posts(bot: Bot):
                             log.info(f"Time to publish post {p.id}!")
                             
                             try:
+                                log.info(f"Sending post {p.id} to chat {p.chat_id}")
+                                log.info(f"Post text: {p.text[:100]}...")
+                                log.info(f"Post media: {p.media_file_id}")
+
                                 # Отправляем пост
                                 if p.media_file_id:
-                                    await bot.send_photo(
+                                    result = await bot.send_photo(
                                         chat_id=p.chat_id,
                                         photo=p.media_file_id,
                                         caption=p.text,
                                         parse_mode="HTML"
                                     )
-                                    log.info(f"Sent photo post {p.id} to chat {p.chat_id}")
+                                    log.info(f"Sent photo post {p.id} to chat {p.chat_id}, message_id: {result.message_id}")
                                 else:
-                                    await bot.send_message(
+                                    result = await bot.send_message(
                                         chat_id=p.chat_id, 
                                         text=p.text,
                                         parse_mode="HTML"
                                     )
-                                    log.info(f"Sent text post {p.id} to chat {p.chat_id}")
+                                    log.info(f"Sent text post {p.id} to chat {p.chat_id}, message_id: {result.message_id}")
     
                                 # Обновляем статус
                                 p.status = "sent"
@@ -120,26 +124,8 @@ async def check_scheduled_posts(bot: Bot):
                                     await session.commit()
                                 except Exception as commit_err:
                                     log.error(f"Error updating post status: {commit_err}")
-                        else:
-                            # Еще не время публикации
-                            time_left = publish_time_utc - now_utc
-                            log.info(f"Post {p.id} will be published in {time_left}")
-                            
-                            # Если пост должен быть опубликован в ближайшие 2 минуты,
-                            # добавим его в список для точного планирования
-                            if time_left < timedelta(minutes=2):
-                                upcoming_posts.append((p.id, publish_time_utc))
-                            
-                            # Отслеживаем ближайший пост для планирования
-                            if next_post_time is None or publish_time_utc < next_post_time:
-                                next_post_time = publish_time_utc
-            
-            # Планируем точную публикацию для постов в ближайшие 2 минуты
-            for post_id, post_time in upcoming_posts:
-                schedule_exact_publication(bot, post_id, post_time)
-                
-    except Exception as e:
-        log.error(f"Error checking scheduled posts: {e}")
+
+
 # scheduler.py (продолжение)
 async def check_google_sheets(bot: Bot):
     """Проверяет подключенные Google Таблицы на наличие запланированных постов."""
