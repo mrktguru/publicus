@@ -32,7 +32,11 @@ scheduler = AsyncIOScheduler()
 
 
 async def main():
+    # Очищаем кеш состояний FSM при запуске
+    await clear_fsm_cache()
+    
     # регистрируем роутеры
+    dp.include_router(start.router)
     dp.include_router(start.router)
     dp.include_router(users.router)
     dp.include_router(channels.router)
@@ -55,4 +59,17 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
+async def clear_fsm_cache():
+    """Очистка кешированных состояний FSM"""
+    try:
+        if isinstance(dp.storage, MemoryStorage):
+            dp.storage.data.clear()
+            logging.info("FSM memory storage cache cleared")
+        else:
+            logging.warning("Cannot clear non-memory storage, manual clearing may be required")
+    except Exception as e:
+        logging.error(f"Error clearing FSM cache: {e}")
 
