@@ -19,9 +19,9 @@ from handlers import (
     pending,
     queue,
     history,
-    users,  # Новый обработчик для пользователей
-    channels,  # Новый обработчик для каналов
-    google_sheets,  # Новый обработчик для Google Sheets
+    users,
+    channels,
+    google_sheets,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -40,12 +40,11 @@ async def main():
     dp.include_router(google_sheets.router)
     dp.include_router(group_select.router)
     dp.include_router(group_settings.router)
+    dp.include_router(queue.router)
     dp.include_router(history.router)
-    dp.include_router(queue.router)   
     dp.include_router(auto_generation.router)
     dp.include_router(moderation.router)
     dp.include_router(pending.router)
-
 
     # планировщик
     setup_scheduler(scheduler, bot)
@@ -56,3 +55,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
