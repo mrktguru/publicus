@@ -74,14 +74,17 @@ async def sheets_menu(message: Message, state: FSMContext):
             # Исправление в функции sheets_menu, примерно строка 66-95
             if active_count > 0:
                 # Получаем первую активную таблицу
+                # Модифицированный код с исправлением
+                # ИСПОЛЬЗУЕМ ТОЛЬКО ORM-запрос для проверки наличия активных таблиц
                 sheets_q = select(GoogleSheet).filter(
                     GoogleSheet.chat_id == channel_id,
                     GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
                 )
                 sheets_result = await session.execute(sheets_q)
                 active_sheets = sheets_result.scalars().all()
-                
-                if active_sheets:  # Дополнительная проверка
+                        
+                if active_sheets:  # Полагаемся только на эту проверку
+                    sheet = active_sheets[0]
                     # Создаем клавиатуру С кнопкой синхронизации
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
@@ -90,13 +93,15 @@ async def sheets_menu(message: Message, state: FSMContext):
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
                 else:
-                    # Если SQL-запрос показал активные таблицы, но SQLAlchemy их не нашел
-                    logger.warning("SQL query found active sheets but SQLAlchemy query returned empty")
-                    # ИСПРАВЛЕНИЕ: Создаем клавиатуру БЕЗ кнопки синхронизации вместо с кнопкой
+                    # Если активных таблиц нет
+                    # Создаем клавиатуру БЕЗ кнопки синхронизации
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
+                
+                # Убираем SQL-запрос, который может давать неверный результат
+                
 
             
             # Отправляем сообщение с соответствующей клавиатурой
