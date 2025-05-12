@@ -64,4 +64,3 @@ def check_sheets_status():
 if __name__ == "__main__":
     print("=== ПРОВЕРКА СОСТОЯНИЯ ПОДКЛЮЧЕНИЙ ТАБЛИЦ ===")
     check_sheets_status()
-сру
