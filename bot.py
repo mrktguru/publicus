@@ -30,6 +30,17 @@ bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher(storage=MemoryStorage())
 scheduler = AsyncIOScheduler()
 
+async def clear_fsm_cache():
+    """Очистка кешированных состояний FSM"""
+    try:
+        if isinstance(dp.storage, MemoryStorage):
+            dp.storage.data.clear()
+            logging.info("FSM memory storage cache cleared")
+        else:
+            logging.warning("Cannot clear non-memory storage, manual clearing may be required")
+    except Exception as e:
+        logging.error(f"Error clearing FSM cache: {e}")
+
 
 async def main():
     # Очищаем кеш состояний FSM при запуске
@@ -62,14 +73,4 @@ if __name__ == "__main__":
 
 
 
-async def clear_fsm_cache():
-    """Очистка кешированных состояний FSM"""
-    try:
-        if isinstance(dp.storage, MemoryStorage):
-            dp.storage.data.clear()
-            logging.info("FSM memory storage cache cleared")
-        else:
-            logging.warning("Cannot clear non-memory storage, manual clearing may be required")
-    except Exception as e:
-        logging.error(f"Error clearing FSM cache: {e}")
 
