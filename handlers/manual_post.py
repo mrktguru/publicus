@@ -108,22 +108,6 @@ async def handle_create_manual_choice(call: CallbackQuery, state: FSMContext):
     )
     await call.answer()
 
-    
-    # Создаем inline клавиатуру для выбора типа создания поста
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ Написать вручную", callback_data="post_manual")],
-        [InlineKeyboardButton(text="🤖 Сгенерировать с помощью ИИ", callback_data="post_auto")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
-    ])
-    
-    await call.message.answer(
-        f"📝 <b>Создание поста в канале \"{current_channel}\"</b>\n\n"
-        f"Выберите способ создания поста:",
-        parse_mode="HTML",
-        reply_markup=markup
-    )
-    await call.answer()
-
 # Обработчики для кнопок выбора способа создания поста
 @router.callback_query(F.data == "post_manual")
 async def handle_post_manual_start(call: CallbackQuery, state: FSMContext):
