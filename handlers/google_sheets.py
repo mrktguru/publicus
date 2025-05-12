@@ -42,7 +42,11 @@ async def sheets_menu(message: Message, state: FSMContext):
             
             channel_id = user.current_chat_id
             
-            # Получаем информацию о подключенных АКТИВНЫХ таблицах для этого канала
+            # ПРИНЦИПИАЛЬНО НОВЫЙ ПОДХОД: 
+            # Сначала создаем базовое сообщение без клавиатуры
+            base_message = "📊 <b>Google Таблицы</b>\n\n"
+            
+            # Получаем все АКТИВНЫЕ таблицы для данного канала
             sheets_q = select(GoogleSheet).filter(
                 GoogleSheet.chat_id == channel_id,
                 GoogleSheet.is_active == True
@@ -50,12 +54,15 @@ async def sheets_menu(message: Message, state: FSMContext):
             sheets_result = await session.execute(sheets_q)
             active_sheets = sheets_result.scalars().all()
             
-            # ВАЖНО: Явно считаем количество активных таблиц
-            active_count = len(active_sheets)
-            logger.info(f"Found {active_count} active sheets for channel {channel_id}")
+            # Явно считаем количество таблиц
+            sheet_count = len(active_sheets)
             
-            if active_count > 0:
-                # Есть активные подключенные таблицы
+            # ЛОГИРОВАНИЕ для отладки
+            logger.info(f"Channel ID: {channel_id}, active sheets count: {sheet_count}")
+            
+            # Формируем разные клавиатуры в зависимости от наличия таблиц
+            if sheet_count > 0:
+                # Есть активные таблицы
                 sheets_text = "\n".join([
                     f"{i+1}. Таблица {sheet.spreadsheet_id[:15]}... "
                     f"(лист: {sheet.sheet_name}, "
@@ -63,50 +70,56 @@ async def sheets_menu(message: Message, state: FSMContext):
                     for i, sheet in enumerate(active_sheets)
                 ])
                 
-                # Берем первую таблицу для кнопок управления
-                first_sheet = active_sheets[0]
+                # Комбинируем сообщение
+                full_message = base_message + sheets_text + "\n\n" + \
+                              "Для управления таблицами используйте кнопки ниже."
                 
-                # Создаем клавиатуру С кнопкой синхронизации
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                # Клавиатура С кнопкой синхронизации
+                keyboard = [
                     [
-                        InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{first_sheet.id}"),
-                        InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")
+                        InlineKeyboardButton(
+                            text="🗑 Удалить таблицу", 
+                            callback_data=f"delete_sheet:{active_sheets[0].id}"
+                        ),
+                        InlineKeyboardButton(
+                            text="🔄 Синхронизировать", 
+                            callback_data="sync_sheets_now"
+                        )
                     ],
-                    [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
-                ])
+                    [
+                        InlineKeyboardButton(
+                            text="➕ Подключить новую таблицу", 
+                            callback_data="sheet_connect"
+                        )
+                    ]
+                ]
                 
-                logger.info(f"Created keyboard WITH sync button for channel with {active_count} active sheets")
+                logger.info("Created keyboard WITH sync button - sheets found")
                 
-                await message.answer(
-                    f"📊 <b>Подключенные Google Таблицы</b>\n\n"
-                    f"{sheets_text}\n\n"
-                    f"Для управления таблицами используйте кнопки ниже или команды:\n"
-                    f"/addsheet - подключить новую таблицу\n"
-                    f"/removesheet [номер] - отключить таблицу\n"
-                    f"/syncsheet [номер] - синхронизировать сейчас",
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
             else:
-                # НЕТ активных таблиц - показываем ТОЛЬКО кнопку добавления таблицы
-                logger.info(f"No active sheets found for channel {channel_id}. Creating keyboard WITHOUT sync button")
+                # Нет активных таблиц
+                full_message = base_message + "У этого канала пока нет подключенных таблиц.\n\n" + \
+                              "Чтобы подключить таблицу, нажмите кнопку ниже или используйте команду /addsheet.\n\n" + \
+                              "<i>Для работы с таблицами вам необходимо:</i>\n" + \
+                              "1. Создать таблицу в Google Sheets\n" + \
+                              "2. Настроить доступ для сервисного аккаунта бота\n" + \
+                              "3. Скопировать URL таблицы"
                 
-                # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Явно задаем клавиатуру без кнопки синхронизации
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
-                ])
+                # Клавиатура БЕЗ кнопки синхронизации
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            text="➕ Подключить таблицу", 
+                            callback_data="sheet_connect"
+                        )
+                    ]
+                ]
                 
-                await message.answer(
-                    "📊 <b>Google Таблицы</b>\n\n"
-                    "У этого канала пока нет подключенных таблиц.\n\n"
-                    "Чтобы подключить таблицу, нажмите кнопку ниже или используйте команду /addsheet.\n\n"
-                    "<i>Для работы с таблицами вам необходимо:</i>\n"
-                    "1. Создать таблицу в Google Sheets\n"
-                    "2. Настроить доступ для сервисного аккаунта бота\n"
-                    "3. Скопировать URL таблицы",
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
+                logger.info("Created keyboard WITHOUT sync button - no sheets found")
+            
+            # Отправка сообщения с подготовленной клавиатурой
+            markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+            await message.answer(full_message, parse_mode="HTML", reply_markup=markup)
             
     except Exception as e:
         logger.error(f"Error showing sheets menu: {e}")
