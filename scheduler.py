@@ -124,9 +124,28 @@ async def check_scheduled_posts(bot: Bot):
                                     await session.commit()
                                 except Exception as commit_err:
                                     log.error(f"Error updating post status: {commit_err}")
+                        else:
+                            # Еще не время публикации
+                            time_left = publish_time_utc - now_utc
+                            log.info(f"Post {p.id} will be published in {time_left}")
+                            
+                            # Если пост должен быть опубликован в ближайшие 2 минуты,
+                            # добавим его в список для точного планирования
+                            if time_left < timedelta(minutes=2):
+                                upcoming_posts.append((p.id, publish_time_utc))
+                            
+                            # Отслеживаем ближайший пост для планирования
+                            if next_post_time is None or publish_time_utc < next_post_time:
+                                next_post_time = publish_time_utc
+            
+            # Планируем точную публикацию для постов в ближайшие 2 минуты
+            for post_id, post_time in upcoming_posts:
+                schedule_exact_publication(bot, post_id, post_time)
+                
+    except Exception as e:
+        log.error(f"Error checking scheduled posts: {e}")
 
 
-# scheduler.py (продолжение)
 async def check_google_sheets(bot: Bot):
     """Проверяет подключенные Google Таблицы на наличие запланированных постов."""
     log.info(f"Checking Google Sheets at {datetime.now(timezone.utc)}")
@@ -246,7 +265,8 @@ async def check_google_sheets(bot: Bot):
             
     except Exception as e:
         log.error(f"Error checking Google Sheets: {e}")
-# scheduler.py (продолжение)
+
+
 async def publish_exact_post(bot: Bot, post_id: int):
     """Публикует конкретный пост в точное время."""
     log.info(f"Publishing exact post {post_id} at {datetime.now(timezone.utc)}")
