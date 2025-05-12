@@ -1,13 +1,17 @@
+# handlers/history.py
+import logging
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select, and_
+from sqlalchemy import select
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from database.db import AsyncSessionLocal
 from database.models import Post, Group
-from keyboards.main import main_menu_kb
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 @router.message(F.text == "📜 История")
 async def show_history(message: Message, state: FSMContext):
