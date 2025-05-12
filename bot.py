@@ -30,31 +30,9 @@ bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher(storage=MemoryStorage())
 scheduler = AsyncIOScheduler()
 
-# Исправленная функция clear_fsm_cache
-async def clear_fsm_cache():
-    """Очистка кешированных состояний FSM"""
-    try:
-        # В aiogram 3.x MemoryStorage имеет другую структуру
-        if hasattr(dp.storage, 'storage'):
-            dp.storage.storage.clear()
-            logging.info("FSM memory storage cache cleared")
-        else:
-            logging.info("Storage does not have a 'storage' attribute, trying direct clearing")
-            # Обходим всех пользователей и чаты
-            storage_records = {}  # Заглушка, т.к. нельзя получить все записи напрямую
-            logging.info("Cannot directly clear memory storage in aiogram 3.x")
-    except Exception as e:
-        logging.error(f"Error clearing FSM cache: {e}")
 
 async def main():
-    # Очищаем кеш перед добавлением роутеров
-    await clear_fsm_cache()
-    
-    # Инициализируем новый диспетчер, чтобы избежать проблем с подключениями
-    global dp
-    dp = Dispatcher(storage=MemoryStorage())
-    
-    # регистрируем роутеры к новому диспетчеру
+    # регистрируем роутеры
     dp.include_router(start.router)
     dp.include_router(users.router)
     dp.include_router(channels.router)
