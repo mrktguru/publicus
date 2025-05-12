@@ -47,7 +47,6 @@ async def sheets_menu(message: Message, state: FSMContext):
                 return
             
             channel_id = user.current_chat_id
-            logger.debug(f"User {user_id} working with channel_id: {channel_id}")
             
             # Получаем канал из БД
             channel_q = select(Group).filter(Group.chat_id == channel_id)
@@ -58,33 +57,25 @@ async def sheets_menu(message: Message, state: FSMContext):
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
-            logger.debug(f"Channel found: {channel.title} (ID: {channel.chat_id})")
-            
             # Проверяем наличие активных таблиц
             sheets_q = select(GoogleSheet).filter(
                 GoogleSheet.chat_id == channel_id,
-                GoogleSheet.is_active == True
+                GoogleSheet.is_active.is_(True)  # Используем is_ вместо ==
             )
             sheets_result = await session.execute(sheets_q)
             active_sheets = sheets_result.scalars().all()
-            
-            # ДОБАВЛЯЕМ ПОДРОБНОЕ ЛОГИРОВАНИЕ
-            logger.debug(f"SQL query: {str(sheets_q)}")
-            
-            # Выводим все активные таблицы для отладки
-            for sheet in active_sheets:
-                logger.debug(f"Found active sheet: ID={sheet.id}, spreadsheet_id={sheet.spreadsheet_id}, is_active={sheet.is_active}")
             
             # Подсчитываем количество активных таблиц
             active_count = len(active_sheets)
             logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_count} active sheets")
             
-            # Создаем сообщение
+            # Сообщение для обоих случаев
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # Две разные клавиатуры в зависимости от наличия таблиц
+            # Создаем разные клавиатуры в зависимости от наличия таблиц
             if active_count > 0:
+                logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
                 # Есть активные таблицы - показываем функциональные кнопки
                 sheet = active_sheets[0]  # Берем первую активную таблицу
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -93,14 +84,13 @@ async def sheets_menu(message: Message, state: FSMContext):
                     [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
                     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                 ])
-                logger.info(f"Showing keyboard WITH sync button for channel {channel.title}")
             else:
+                logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
                 # Нет активных таблиц - показываем только кнопку подключения
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                 ])
-                logger.info(f"Showing keyboard WITHOUT sync button for channel {channel.title}")
             
             # Отправляем сообщение
             await message.answer(message_text, parse_mode="HTML", reply_markup=keyboard)
