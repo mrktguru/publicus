@@ -330,6 +330,7 @@ async def cancel_creation(call: CallbackQuery, state: FSMContext):
 # ── публикация «сейчас» ────────────────────────────────────────
 @router.callback_query(F.data == "manual_publish_now")
 async def publish_now(call: CallbackQuery, state: FSMContext):
+    """Публикация поста сейчас."""
     logger.info("Publishing post now")
     data = await state.get_data()
     logger.info(f"Publishing post now with data: {data}")
@@ -352,6 +353,7 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
                 await state.clear()
                 return
             chat_id = group.chat_id
+            logger.info(f"Found group: {group.title}, chat_id: {chat_id}")
     except Exception as e:
         logger.error(f"Error getting group: {e}")
         await call.message.edit_text(f"❌ Ошибка при получении группы: {e}")
@@ -363,13 +365,20 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
         await call.message.edit_text("❌ Ошибка: нет текста или медиа для отправки.")
         await state.clear()
         return
+    
+    # Логируем перед отправкой
+    logger.info(f"Attempting to send message to chat_id: {chat_id}")
+    logger.info(f"Text: {text[:100]}...")
+    logger.info(f"Media file ID: {media_file_id}")
 
     # 3) Отправляем в чат
     try:
         if media_file_id:
-            await call.bot.send_photo(chat_id=chat_id, photo=media_file_id, caption=text)
+            result = await call.bot.send_photo(chat_id=chat_id, photo=media_file_id, caption=text)
+            logger.info(f"Photo message sent successfully: {result.message_id}")
         else:
-            await call.bot.send_message(chat_id=chat_id, text=text)
+            result = await call.bot.send_message(chat_id=chat_id, text=text)
+            logger.info(f"Text message sent successfully: {result.message_id}")
     except Exception as e:
         logger.error(f"Error sending message to chat: {e}")
         await call.message.edit_text(f"❌ Ошибка отправки сообщения: {e}")
@@ -391,6 +400,7 @@ async def publish_now(call: CallbackQuery, state: FSMContext):
             )
             session.add(post)
             await session.commit()
+            logger.info(f"Post saved to database with ID {post.id}")
         except Exception as e:
             logger.error(f"Error saving post to database: {e}")
             # Продолжаем выполнение, так как сообщение уже отправлено
