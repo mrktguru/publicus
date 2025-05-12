@@ -9,6 +9,8 @@ from aiogram.fsm.storage.base import StorageKey
 
 from sqlalchemy import select
 from sqlalchemy import func, and_
+from sqlalchemy import select, text
+
 
 
 from database.db import AsyncSessionLocal
@@ -29,7 +31,7 @@ class GoogleSheetStates(StatesGroup):
 @router.message(lambda m: m.text == "Таблицы")
 async def sheets_menu(message: Message, state: FSMContext):
     """Обработчик для меню Google Таблиц."""
-    logger.info("Entering sheets_menu function")
+    logger.info("Entering sheets_menu function with clean implementation")
     user_id = message.from_user.id
     
     try:
@@ -57,42 +59,54 @@ async def sheets_menu(message: Message, state: FSMContext):
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
-            # Проверяем наличие активных таблиц
-            sheets_q = select(GoogleSheet).filter(
-                GoogleSheet.chat_id == channel_id,
-                GoogleSheet.is_active.is_(True)  # Используем is_ вместо ==
-            )
-            sheets_result = await session.execute(sheets_q)
-            active_sheets = sheets_result.scalars().all()
+            # Получаем активные таблицы через прямой SQL-запрос для надежности
+            from sqlalchemy import text
+            sql_query = text(f"SELECT COUNT(*) FROM google_sheets WHERE chat_id = {channel_id} AND is_active = 1")
+            result = await session.execute(sql_query)
+            active_count = result.scalar_one()
             
-            # Подсчитываем количество активных таблиц
-            active_count = len(active_sheets)
-            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_count} active sheets")
+            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_count} active sheets (SQL query)")
             
-            # Сообщение для обоих случаев
+            # Создаем базовое сообщение для обоих случаев
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # Создаем разные клавиатуры в зависимости от наличия таблиц
             if active_count > 0:
-                logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
-                # Есть активные таблицы - показываем функциональные кнопки
-                sheet = active_sheets[0]  # Берем первую активную таблицу
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                    [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
-                    [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                ])
+                # Получаем первую активную таблицу
+                sheets_q = select(GoogleSheet).filter(
+                    GoogleSheet.chat_id == channel_id,
+                    GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
+                )
+                sheets_result = await session.execute(sheets_q)
+                active_sheets = sheets_result.scalars().all()
+                
+                if active_sheets:  # Дополнительная проверка
+                    sheet = active_sheets[0]
+                    # Создаем клавиатуру С кнопкой синхронизации
+                    logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+                        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
+                        [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+                    ])
+                else:
+                    # Если SQL-запрос показал активные таблицы, но SQLAlchemy их не нашел
+                    logger.warning("SQL query found active sheets but SQLAlchemy query returned empty")
+                    # Создаем клавиатуру БЕЗ кнопки синхронизации
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+                    ])
             else:
+                # Нет активных таблиц
                 logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
-                # Нет активных таблиц - показываем только кнопку подключения
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                 ])
             
-            # Отправляем сообщение
+            # Отправляем сообщение с соответствующей клавиатурой
             await message.answer(message_text, parse_mode="HTML", reply_markup=keyboard)
             
     except Exception as e:
@@ -100,7 +114,6 @@ async def sheets_menu(message: Message, state: FSMContext):
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
-
 
 
 
@@ -499,56 +512,45 @@ async def process_sync_interval(message: Message, state: FSMContext):
     # Создаем новую запись в БД
     try:
         async with AsyncSessionLocal() as session:
+            # Деактивируем все старые записи для этого канала (для чистоты)
+            from sqlalchemy import update
+            await session.execute(
+                update(GoogleSheet)
+                .where(GoogleSheet.chat_id == channel_id)
+                .values(is_active=False)
+            )
+            
+            # Создаем новую запись таблицы
             new_sheet = GoogleSheet(
                 chat_id=channel_id,
                 spreadsheet_id=spreadsheet_id,
                 sheet_name=sheet_name,
                 sync_interval=interval,
                 created_by=message.from_user.id,
-                is_active=True  # ВАЖНО: явно указываем, что таблица активна
+                is_active=True  # Явно указываем, что таблица активна
             )
             
             session.add(new_sheet)
             await session.commit()
             
-            # Для получения ID новой записи
-            sheet_q = select(GoogleSheet).filter(
-                GoogleSheet.spreadsheet_id == spreadsheet_id,
-                GoogleSheet.chat_id == channel_id,
-                GoogleSheet.is_active == True
-            )
-            sheet_result = await session.execute(sheet_q)
-            sheet = sheet_result.scalar_one_or_none()
+            # Получаем ID новой записи
+            new_sheet_id = new_sheet.id
+            logger.info(f"Created new sheet: ID={new_sheet_id}, active={new_sheet.is_active}")
             
-            if sheet:
-                await message.answer(
-                    f"🎉 Google Таблица успешно подключена!\n\n"
-                    f"<b>Параметры подключения:</b>\n"
-                    f"- ID таблицы: {spreadsheet_id}\n"
-                    f"- Лист: {sheet_name}\n"
-                    f"- Интервал синхронизации: {interval} минут\n\n"
-                    f"Теперь вы можете синхронизировать данные между таблицей и ботом.",
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")],
-                        [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
-                        [InlineKeyboardButton(text="◀️ Вернуться в меню", callback_data="back_to_main")]
-                    ])
-                )
-                
-                # Логируем успешное подключение
-                logger.info(f"Successfully connected sheet ID: {sheet.id} to channel ID: {channel_id}")
-            else:
-                await message.answer(
-                    f"🎉 Google Таблица успешно подключена!\n\n"
-                    f"<b>Параметры подключения:</b>\n"
-                    f"- ID таблицы: {spreadsheet_id}\n"
-                    f"- Лист: {sheet_name}\n"
-                    f"- Интервал синхронизации: {interval} минут\n\n"
-                    f"Бот будет автоматически проверять таблицу и публиковать посты по расписанию.",
-                    parse_mode="HTML"
-                )
-                logger.warning(f"Could not find the just created sheet for channel ID: {channel_id}")
+            await message.answer(
+                f"🎉 Google Таблица успешно подключена!\n\n"
+                f"<b>Параметры подключения:</b>\n"
+                f"- ID таблицы: {spreadsheet_id}\n"
+                f"- Лист: {sheet_name}\n"
+                f"- Интервал синхронизации: {interval} минут\n\n"
+                f"Бот будет автоматически проверять таблицу и публиковать посты по расписанию.\n"
+                f"Используйте кнопку 'Синхронизировать' для немедленной синхронизации.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")],
+                    [InlineKeyboardButton(text="◀️ Вернуться в меню", callback_data="back_to_main")]
+                ])
+            )
             
             # Очищаем состояние
             await state.clear()
@@ -560,6 +562,7 @@ async def process_sync_interval(message: Message, state: FSMContext):
             f"Пожалуйста, попробуйте еще раз или обратитесь к администратору."
         )
         await state.clear()
+
 
 
 @router.message(Command('removesheet'))
