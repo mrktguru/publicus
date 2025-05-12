@@ -618,18 +618,28 @@ async def back_to_channels_list(message: Message, state: FSMContext):
         await message.answer("⚠️ Произошла ошибка при получении списка каналов. Пожалуйста, попробуйте позже.")
 
 # Обработчики для inline кнопок
-@router.callback_query(lambda c: c.data == "back_to_main")
+@router.callback_query(F.data == "back_to_main")
 async def back_to_main_menu(call: CallbackQuery, state: FSMContext):
-    """Возврат к основному меню"""
+    """Возврат к главному меню"""
     user_data = await state.get_data()
     current_channel = user_data.get("current_channel_title", "текущем канале")
     
-    await call.message.edit_text(
-        f"Вы работаете с каналом \"{current_channel}\"\n\n"
-        f"Выберите действие в меню ниже."
-    )
-    
-    await call.answer()
+    try:
+        await call.message.edit_text(
+            f"Работаем с каналом: \"{current_channel}\"",
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Создать пост", callback_data="post:create_manual")],
+                [InlineKeyboardButton(text="Контент план", callback_data="show_schedule")],
+                [InlineKeyboardButton(text="История публикаций", callback_data="post_history")],
+                [InlineKeyboardButton(text="Таблицы Google Sheets", callback_data="open_sheets_menu")],
+                [InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_channels")]
+            ])
+        )
+        await call.answer()
+    except Exception as e:
+        logger.error(f"Error returning to main menu: {e}")
+        await call.answer("Произошла ошибка при возврате в главное меню", show_alert=True)
+
 
 # обработчик кнопки НАСТРОЙКИ
 @router.message(lambda m: m.text == "Настройки" or m.text == "⚙️ Настройки")
