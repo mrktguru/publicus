@@ -148,7 +148,7 @@ async def delete_sheet_callback(call: CallbackQuery):
             # Отправляем сообщение об успешном удалении
             await call.answer("✅ Таблица успешно отключена", show_alert=False)
             
-            # Обновляем основное сообщение
+            # Обновляем основное сообщение - ВАЖНО! Здесь меняем клавиатуру на версию БЕЗ кнопки синхронизации
             await call.message.edit_text(
                 "📊 <b>Google Таблицы</b>\n\n"
                 "Таблица успешно отключена.\n\n"
@@ -162,6 +162,43 @@ async def delete_sheet_callback(call: CallbackQuery):
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
                 ])
             )
+            
+            # После удаления также нужно проверить, остались ли активные таблицы
+            # Если таблицы остались, нужно их показать с кнопкой синхронизации
+            sheets_q = select(GoogleSheet).filter(
+                GoogleSheet.chat_id == sheet.chat_id,
+                GoogleSheet.is_active == True
+            )
+            sheets_result = await session.execute(sheets_q)
+            remaining_sheets = sheets_result.scalars().all()
+            
+            if remaining_sheets:
+                # Если остались другие активные таблицы, показываем их с кнопками
+                sheets_text = "\n".join([
+                    f"{i+1}. Таблица {s.spreadsheet_id[:15]}... "
+                    f"(лист: {s.sheet_name}, "
+                    f"последняя синхронизация: {s.last_sync.strftime('%d.%m.%Y %H:%M') if s.last_sync else 'никогда'})"
+                    for i, s in enumerate(remaining_sheets)
+                ])
+                
+                # Берем первую из оставшихся таблиц
+                first_sheet = remaining_sheets[0]
+                
+                # Обновляем сообщение, показывая оставшиеся таблицы с кнопками управления
+                await call.message.edit_text(
+                    f"📊 <b>Подключенные Google Таблицы</b>\n\n"
+                    f"{sheets_text}\n\n"
+                    f"Таблица успешно отключена, остальные таблицы доступны.",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{first_sheet.id}"),
+                            InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")
+                        ],
+                        [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
+                    ])
+                )
+                
     except Exception as e:
         logger.error(f"Error deleting sheet: {e}")
         await call.answer("⚠️ Произошла ошибка при удалении таблицы", show_alert=True)
