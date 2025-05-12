@@ -58,13 +58,21 @@ async def sheets_menu(message: Message, state: FSMContext):
                     for i, sheet in enumerate(sheets)
                 ])
                 
-                # Логируем создание клавиатуры
-                logger.info("Creating keyboard for sheets with sheet_connect and sync_sheets_now buttons")
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")],
-                    [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")]
-                ])
-                logger.info(f"Keyboard created with buttons: sheet_connect, sync_sheets_now")
+                # ИЗМЕНЕНИЕ: Показываем информацию о подключенной таблице и добавляем кнопки удаления и синхронизации
+                # Вместо одной таблицы выбираем только первую (в дальнейшем можно добавить поддержку нескольких таблиц)
+                if sheets:
+                    sheet = sheets[0]
+                    
+                    # Создаем клавиатуру с кнопками удаления и синхронизации
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}"),
+                            InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")
+                        ],
+                        [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
+                    ])
+                    
+                    logger.info(f"Keyboard created with buttons: delete_sheet, sync_sheets_now, sheet_connect")
                 
                 await message.answer(
                     f"📊 <b>Подключенные Google Таблицы</b>\n\n"
@@ -78,7 +86,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                     reply_markup=keyboard
                 )
             else:
-                # Логируем создание клавиатуры для пустого списка
+                # ИЗМЕНЕНИЕ: Если таблица НЕ подключена, показываем только кнопку добавления
                 logger.info("Creating keyboard for empty sheets list with sheet_connect button")
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
@@ -100,6 +108,60 @@ async def sheets_menu(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Error showing sheets menu: {e}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
+
+# Добавляем новый обработчик для кнопки удаления таблицы
+@router.callback_query(lambda c: c.data.startswith("delete_sheet:"))
+async def delete_sheet_callback(call: CallbackQuery):
+    """Обработчик для удаления таблицы через коллбэк"""
+    try:
+        # Извлекаем ID таблицы из callback_data
+        sheet_id = int(call.data.split(":")[1])
+        
+        async with AsyncSessionLocal() as session:
+            # Находим таблицу по ID
+            sheet = await session.get(GoogleSheet, sheet_id)
+            
+            if not sheet:
+                await call.answer("⚠️ Таблица не найдена", show_alert=True)
+                return
+            
+            # Проверяем права пользователя на удаление (владелец или админ)
+            user_id = call.from_user.id
+            if sheet.created_by != user_id:
+                # Проверяем, является ли пользователь админом
+                user_q = select(User).filter(User.user_id == user_id)
+                user_result = await session.execute(user_q)
+                user = user_result.scalar_one_or_none()
+                
+                if not user or user.role != "admin":
+                    await call.answer("⚠️ У вас нет прав на удаление этой таблицы", show_alert=True)
+                    return
+            
+            # Помечаем таблицу как неактивную (мягкое удаление)
+            sheet.is_active = False
+            await session.commit()
+            
+            # Отправляем сообщение об успешном удалении
+            await call.answer("✅ Таблица успешно отключена", show_alert=False)
+            
+            # Обновляем основное сообщение
+            await call.message.edit_text(
+                "📊 <b>Google Таблицы</b>\n\n"
+                "Таблица успешно отключена.\n\n"
+                "Чтобы подключить таблицу, нажмите кнопку ниже или используйте команду /addsheet.\n\n"
+                "<i>Для работы с таблицами вам необходимо:</i>\n"
+                "1. Создать таблицу в Google Sheets\n"
+                "2. Настроить доступ для сервисного аккаунта бота\n"
+                "3. Скопировать URL таблицы",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
+                ])
+            )
+    except Exception as e:
+        logger.error(f"Error deleting sheet: {e}")
+        await call.answer("⚠️ Произошла ошибка при удалении таблицы", show_alert=True)
+
 
 # Обработчики для коллбэков, связанных только с Google Sheets
 @router.callback_query(lambda c: c.data in ["sheet_connect", "add_sheet"])
