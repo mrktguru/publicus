@@ -45,12 +45,13 @@ async def sheets_menu(message: Message, state: FSMContext):
             channel_id = user.current_chat_id
             
             # Получаем информацию о подключенных таблицах для этого канала
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id)
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == True)
             sheets_result = await session.execute(sheets_q)
             sheets = sheets_result.scalars().all()
         
             # Формируем ответное сообщение
             if sheets:
+                # Есть подключенные таблицы
                 sheets_text = "\n".join([
                     f"{i+1}. Таблица {sheet.spreadsheet_id[:15]}... "
                     f"(лист: {sheet.sheet_name}, "
@@ -58,21 +59,20 @@ async def sheets_menu(message: Message, state: FSMContext):
                     for i, sheet in enumerate(sheets)
                 ])
                 
-                # ИЗМЕНЕНИЕ: Показываем информацию о подключенной таблице и добавляем кнопки удаления и синхронизации
-                # Вместо одной таблицы выбираем только первую (в дальнейшем можно добавить поддержку нескольких таблиц)
-                if sheets:
-                    sheet = sheets[0]
-                    
-                    # Создаем клавиатуру с кнопками удаления и синхронизации
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [
-                            InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}"),
-                            InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")
-                        ],
-                        [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
-                    ])
-                    
-                    logger.info(f"Keyboard created with buttons: delete_sheet, sync_sheets_now, sheet_connect")
+                # ИСПРАВЛЕНИЕ: Показываем информацию о подключенной таблице и кнопки удаления и синхронизации
+                # В случае наличия таблиц
+                sheet = sheets[0]  # Берем первую таблицу (в будущем можно добавить выбор таблицы)
+                
+                # Создаем клавиатуру с кнопками удаления и синхронизации
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}"),
+                        InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")
+                    ],
+                    [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
+                ])
+                
+                logger.info(f"Keyboard created with buttons: delete_sheet, sync_sheets_now, sheet_connect")
                 
                 await message.answer(
                     f"📊 <b>Подключенные Google Таблицы</b>\n\n"
@@ -86,12 +86,13 @@ async def sheets_menu(message: Message, state: FSMContext):
                     reply_markup=keyboard
                 )
             else:
-                # ИЗМЕНЕНИЕ: Если таблица НЕ подключена, показываем только кнопку добавления
-                logger.info("Creating keyboard for empty sheets list with sheet_connect button")
+                # ИСПРАВЛЕНИЕ: Если НЕТ подключенных таблиц, показываем только кнопку добавления
+                # Без кнопки синхронизации
+                logger.info("Creating keyboard for empty sheets list with sheet_connect button only")
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
                 ])
-                logger.info(f"Keyboard created with button: sheet_connect")
+                logger.info(f"Keyboard created with button: sheet_connect only")
                 
                 await message.answer(
                     "📊 <b>Google Таблицы</b>\n\n"
