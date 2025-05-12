@@ -128,6 +128,8 @@ async def delete_sheet_callback(call: CallbackQuery):
                 await call.answer("⚠️ Таблица не найдена", show_alert=True)
                 return
             
+            chat_id = sheet.chat_id  # Сохраняем chat_id перед удалением
+            
             # Проверяем права пользователя на удаление (владелец или админ)
             user_id = call.from_user.id
             if sheet.created_by != user_id:
@@ -147,41 +149,28 @@ async def delete_sheet_callback(call: CallbackQuery):
             # Отправляем сообщение об успешном удалении
             await call.answer("✅ Таблица успешно отключена", show_alert=False)
             
-            # Обновляем основное сообщение - ВАЖНО! Здесь меняем клавиатуру на версию БЕЗ кнопки синхронизации
-            await call.message.edit_text(
-                "📊 <b>Google Таблицы</b>\n\n"
-                "Таблица успешно отключена.\n\n"
-                "Чтобы подключить таблицу, нажмите кнопку ниже или используйте команду /addsheet.\n\n"
-                "<i>Для работы с таблицами вам необходимо:</i>\n"
-                "1. Создать таблицу в Google Sheets\n"
-                "2. Настроить доступ для сервисного аккаунта бота\n"
-                "3. Скопировать URL таблицы",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
-                ])
-            )
-            
-            # После удаления также нужно проверить, остались ли активные таблицы
-            # Если таблицы остались, нужно их показать с кнопкой синхронизации
+            # ВАЖНОЕ ИЗМЕНЕНИЕ: Проверяем остались ли активные таблицы после удаления
             sheets_q = select(GoogleSheet).filter(
-                GoogleSheet.chat_id == sheet.chat_id,
+                GoogleSheet.chat_id == chat_id,
                 GoogleSheet.is_active == True
             )
             sheets_result = await session.execute(sheets_q)
-            remaining_sheets = sheets_result.scalars().all()
+            active_sheets = sheets_result.scalars().all()
+            active_count = len(active_sheets)
             
-            if remaining_sheets:
+            logger.info(f"After deletion: {active_count} active sheets remain for channel {chat_id}")
+            
+            if active_count > 0:
                 # Если остались другие активные таблицы, показываем их с кнопками
                 sheets_text = "\n".join([
                     f"{i+1}. Таблица {s.spreadsheet_id[:15]}... "
                     f"(лист: {s.sheet_name}, "
                     f"последняя синхронизация: {s.last_sync.strftime('%d.%m.%Y %H:%M') if s.last_sync else 'никогда'})"
-                    for i, s in enumerate(remaining_sheets)
+                    for i, s in enumerate(active_sheets)
                 ])
                 
                 # Берем первую из оставшихся таблиц
-                first_sheet = remaining_sheets[0]
+                first_sheet = active_sheets[0]
                 
                 # Обновляем сообщение, показывая оставшиеся таблицы с кнопками управления
                 await call.message.edit_text(
@@ -195,6 +184,17 @@ async def delete_sheet_callback(call: CallbackQuery):
                             InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")
                         ],
                         [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
+                    ])
+                )
+            else:
+                # Если не осталось активных таблиц, показываем сообщение без кнопки синхронизации
+                await call.message.edit_text(
+                    "📊 <b>Google Таблицы</b>\n\n"
+                    "Таблица успешно отключена. У канала больше нет подключенных таблиц.\n\n"
+                    "Чтобы подключить таблицу, нажмите кнопку ниже или используйте команду /addsheet.",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
                     ])
                 )
                 
