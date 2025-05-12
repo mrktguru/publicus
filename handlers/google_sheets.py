@@ -71,6 +71,7 @@ async def sheets_menu(message: Message, state: FSMContext):
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
+            # Исправление в функции sheets_menu, примерно строка 66-95
             if active_count > 0:
                 # Получаем первую активную таблицу
                 sheets_q = select(GoogleSheet).filter(
@@ -81,9 +82,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                 active_sheets = sheets_result.scalars().all()
                 
                 if active_sheets:  # Дополнительная проверка
-                    sheet = active_sheets[0]
                     # Создаем клавиатуру С кнопкой синхронизации
-                    logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                         [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
@@ -93,18 +92,12 @@ async def sheets_menu(message: Message, state: FSMContext):
                 else:
                     # Если SQL-запрос показал активные таблицы, но SQLAlchemy их не нашел
                     logger.warning("SQL query found active sheets but SQLAlchemy query returned empty")
-                    # Создаем клавиатуру БЕЗ кнопки синхронизации
+                    # ИСПРАВЛЕНИЕ: Создаем клавиатуру БЕЗ кнопки синхронизации вместо с кнопкой
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
-            else:
-                # Нет активных таблиц
-                logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                ])
+
             
             # Отправляем сообщение с соответствующей клавиатурой
             await message.answer(message_text, parse_mode="HTML", reply_markup=keyboard)
