@@ -57,29 +57,30 @@ async def sheets_menu(message: Message, state: FSMContext):
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
-            # Проверяем наличие активных таблиц
-            # ВАЖНОЕ ИСПРАВЛЕНИЕ: используем count() вместо загрузки всех записей
-            active_sheets_count_q = select(func.count()).select_from(GoogleSheet).where(
-                and_(
-                    GoogleSheet.chat_id == channel_id,
-                    GoogleSheet.is_active == True
-                )
+            # Проверяем наличие активных таблиц для этого канала
+            sheets_q = select(GoogleSheet).filter(
+                GoogleSheet.chat_id == channel_id,
+                GoogleSheet.is_active == True
             )
-            active_sheets_count_result = await session.execute(active_sheets_count_q)
-            active_sheets_count = active_sheets_count_result.scalar()
+            sheets_result = await session.execute(sheets_q)
+            active_sheets = sheets_result.scalars().all()
             
-            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_sheets_count} active sheets")
+            # ВАЖНО: явно считаем количество активных таблиц
+            active_count = len(active_sheets)
+            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_count} active sheets")
             
-            # Создаем сообщение
+            # Создаем базовое сообщение
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # Две разные клавиатуры в зависимости от наличия таблиц
-            if active_sheets_count > 0:
+            # Создаем разные клавиатуры в зависимости от наличия таблиц
+            if active_count > 0:
                 # Есть активные таблицы - показываем функциональные кнопки
+                sheet = active_sheets[0]  # Берем первую активную таблицу
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                     [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
+                    [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
                     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                 ])
                 logger.info(f"Showing keyboard WITH sync button for channel {channel.title}")
@@ -497,66 +498,56 @@ async def process_sync_interval(message: Message, state: FSMContext):
     # Создаем новую запись в БД
     try:
         async with AsyncSessionLocal() as session:
-            # ИСПРАВЛЕНИЕ: Проверяем, есть ли уже активная таблица с таким ID
-            existing_q = select(GoogleSheet).filter(
+            new_sheet = GoogleSheet(
+                chat_id=channel_id,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                sync_interval=interval,
+                created_by=message.from_user.id,
+                is_active=True  # ВАЖНО: явно указываем, что таблица активна
+            )
+            
+            session.add(new_sheet)
+            await session.commit()
+            
+            # Для получения ID новой записи
+            sheet_q = select(GoogleSheet).filter(
                 GoogleSheet.spreadsheet_id == spreadsheet_id,
                 GoogleSheet.chat_id == channel_id,
                 GoogleSheet.is_active == True
             )
-            existing_result = await session.execute(existing_q)
-            existing_sheet = existing_result.scalar_one_or_none()
+            sheet_result = await session.execute(sheet_q)
+            sheet = sheet_result.scalar_one_or_none()
             
-            if existing_sheet:
-                # Если таблица уже существует - обновляем её параметры
-                existing_sheet.sheet_name = sheet_name
-                existing_sheet.sync_interval = interval
-                existing_sheet.is_active = True
-                sheet_id = existing_sheet.id
-                logger.info(f"Updated existing sheet (ID: {sheet_id}) for channel ID: {channel_id}")
+            if sheet:
+                await message.answer(
+                    f"🎉 Google Таблица успешно подключена!\n\n"
+                    f"<b>Параметры подключения:</b>\n"
+                    f"- ID таблицы: {spreadsheet_id}\n"
+                    f"- Лист: {sheet_name}\n"
+                    f"- Интервал синхронизации: {interval} минут\n\n"
+                    f"Теперь вы можете синхронизировать данные между таблицей и ботом.",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")],
+                        [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
+                        [InlineKeyboardButton(text="◀️ Вернуться в меню", callback_data="back_to_main")]
+                    ])
+                )
+                
+                # Логируем успешное подключение
+                logger.info(f"Successfully connected sheet ID: {sheet.id} to channel ID: {channel_id}")
             else:
-                # Если таблицы нет - создаем новую
-                new_sheet = GoogleSheet(
-                    chat_id=channel_id,
-                    spreadsheet_id=spreadsheet_id,
-                    sheet_name=sheet_name,
-                    sync_interval=interval,
-                    created_by=message.from_user.id,
-                    is_active=True  # Явно указываем активный статус
+                await message.answer(
+                    f"🎉 Google Таблица успешно подключена!\n\n"
+                    f"<b>Параметры подключения:</b>\n"
+                    f"- ID таблицы: {spreadsheet_id}\n"
+                    f"- Лист: {sheet_name}\n"
+                    f"- Интервал синхронизации: {interval} минут\n\n"
+                    f"Бот будет автоматически проверять таблицу и публиковать посты по расписанию.",
+                    parse_mode="HTML"
                 )
-                session.add(new_sheet)
-                logger.info(f"Created new sheet for channel ID: {channel_id}")
-            
-            # Сохраняем изменения
-            await session.commit()
-            
-            # Получаем ID таблицы (для логов)
-            if not existing_sheet:
-                sheet_q = select(GoogleSheet).filter(
-                    GoogleSheet.spreadsheet_id == spreadsheet_id,
-                    GoogleSheet.chat_id == channel_id,
-                    GoogleSheet.is_active == True
-                )
-                sheet_result = await session.execute(sheet_q)
-                sheet = sheet_result.scalar_one_or_none()
-                sheet_id = sheet.id if sheet else "unknown"
-            
-            # Логируем успешное подключение
-            logger.info(f"Successfully connected sheet ID: {sheet_id} to channel ID: {channel_id}")
-            
-            # Сообщение пользователю с кнопкой синхронизации
-            await message.answer(
-                f"🎉 Google Таблица успешно подключена!\n\n"
-                f"<b>Параметры подключения:</b>\n"
-                f"- ID таблицы: {spreadsheet_id[:15]}...\n"
-                f"- Лист: {sheet_name}\n"
-                f"- Интервал синхронизации: {interval} минут\n\n"
-                f"Теперь вы можете управлять этой таблицей.",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")],
-                    [InlineKeyboardButton(text="◀️ Вернуться в меню таблиц", callback_data="back_to_sheets")]
-                ])
-            )
+                logger.warning(f"Could not find the just created sheet for channel ID: {channel_id}")
             
             # Очищаем состояние
             await state.clear()
@@ -774,6 +765,21 @@ async def back_to_sheets_menu(call: CallbackQuery):
     # Скрываем инлайн-клавиатуру в предыдущем сообщении
     await call.message.edit_reply_markup(reply_markup=None)
 
+@router.callback_query(lambda c: c.data == "back_to_main")
+async def back_to_main_menu(call: CallbackQuery):
+    """Обработчик для возврата в главное меню"""
+    # Создаем главную клавиатуру
+    from utils.keyboards import create_main_keyboard
+    main_kb = await create_main_keyboard()
+    
+    # Отправляем сообщение с главным меню
+    await call.message.answer("Выберите действие:", reply_markup=main_kb)
+    
+    # Скрываем инлайн-клавиатуру в предыдущем сообщении
+    await call.message.edit_reply_markup(reply_markup=None)
+    
+    # Отвечаем на колбэк
+    await call.answer()
 
 
 
