@@ -31,7 +31,7 @@ class Group(Base):
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)  # пользовательское название
     type: Mapped[str] = mapped_column(String, default="channel")  # channel или group
     added_by: Mapped[int] = mapped_column(BigInteger)  # ID пользователя, добавившего группу
-    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     date_added: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     last_post_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -106,6 +106,7 @@ class GenerationTemplate(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
+# Проверьте и исправьте определение поля is_active в классе GoogleSheet
 class GoogleSheet(Base):
     """Модель для хранения информации о подключенных Google Sheets"""
     __tablename__ = "google_sheets"
@@ -115,7 +116,8 @@ class GoogleSheet(Base):
     spreadsheet_id: Mapped[str] = mapped_column(String)  # ID Google Таблицы
     sheet_name: Mapped[str] = mapped_column(String, default="Контент-план")  # Имя листа
     last_sync: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)  # Время последней синхронизации
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # Активно ли подключение
+    # ИСПРАВЛЕНИЕ: Явно указываем False как значение по умолчанию
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)  # Активно ли подключение
     created_by: Mapped[int] = mapped_column(BigInteger)  # ID создателя
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)  # Дата создания
     sync_interval: Mapped[int] = mapped_column(Integer, default=15)  # Интервал синхронизации в минутах
