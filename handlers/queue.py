@@ -49,7 +49,6 @@ async def show_queue(message: Message, state: FSMContext):
     )
 
 # Добавьте этот код в файл handlers/queue.py
-
 @router.callback_query(F.data == "show_schedule")
 async def show_schedule_callback(call: CallbackQuery, state: FSMContext):
     """Обработчик инлайн-кнопки 'Контент план'"""
