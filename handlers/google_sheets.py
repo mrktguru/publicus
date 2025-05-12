@@ -43,14 +43,20 @@ async def sheets_menu(message: Message, state: FSMContext):
             
             channel_id = user.current_chat_id
             
-            # Получаем информацию о подключенных таблицах для этого канала
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == True)
+            # Получаем информацию о подключенных АКТИВНЫХ таблицах для этого канала
+            sheets_q = select(GoogleSheet).filter(
+                GoogleSheet.chat_id == channel_id,
+                GoogleSheet.is_active == True
+            )
             sheets_result = await session.execute(sheets_q)
             sheets = sheets_result.scalars().all()
+            
+            # Проверяем, есть ли активные таблицы
+            has_active_sheets = len(sheets) > 0
         
-            # Формируем ответное сообщение
-            if sheets:
-                # Есть подключенные таблицы
+            # Формируем ответное сообщение в зависимости от наличия таблиц
+            if has_active_sheets:
+                # Есть активные подключенные таблицы
                 sheets_text = "\n".join([
                     f"{i+1}. Таблица {sheet.spreadsheet_id[:15]}... "
                     f"(лист: {sheet.sheet_name}, "
@@ -58,11 +64,10 @@ async def sheets_menu(message: Message, state: FSMContext):
                     for i, sheet in enumerate(sheets)
                 ])
                 
-                # ИСПРАВЛЕНИЕ: Показываем информацию о подключенной таблице и кнопки удаления и синхронизации
-                # В случае наличия таблиц
-                sheet = sheets[0]  # Берем первую таблицу (в будущем можно добавить выбор таблицы)
+                # Берем первую таблицу для кнопок управления
+                sheet = sheets[0]
                 
-                # Создаем клавиатуру с кнопками удаления и синхронизации
+                # Создаем клавиатуру С кнопкой синхронизации
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [
                         InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}"),
@@ -71,7 +76,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                     [InlineKeyboardButton(text="➕ Подключить новую таблицу", callback_data="sheet_connect")]
                 ])
                 
-                logger.info(f"Keyboard created with buttons: delete_sheet, sync_sheets_now, sheet_connect")
+                logger.info("Created keyboard WITH sync button for channel with active sheets")
                 
                 await message.answer(
                     f"📊 <b>Подключенные Google Таблицы</b>\n\n"
@@ -79,19 +84,17 @@ async def sheets_menu(message: Message, state: FSMContext):
                     f"Для управления таблицами используйте кнопки ниже или команды:\n"
                     f"/addsheet - подключить новую таблицу\n"
                     f"/removesheet [номер] - отключить таблицу\n"
-                    f"/syncsheet [номер] - синхронизировать сейчас\n"
-                    f"/sheetinfo [номер] - информация о подключении",
+                    f"/syncsheet [номер] - синхронизировать сейчас",
                     parse_mode="HTML",
                     reply_markup=keyboard
                 )
             else:
-                # ИСПРАВЛЕНИЕ: Если НЕТ подключенных таблиц, показываем только кнопку добавления
-                # Без кнопки синхронизации
-                logger.info("Creating keyboard for empty sheets list with sheet_connect button only")
+                # НЕТ активных таблиц - показываем ТОЛЬКО кнопку добавления таблицы
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
                 ])
-                logger.info(f"Keyboard created with button: sheet_connect only")
+                
+                logger.info("Created keyboard WITHOUT sync button - no active tables found")
                 
                 await message.answer(
                     "📊 <b>Google Таблицы</b>\n\n"
@@ -108,6 +111,7 @@ async def sheets_menu(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Error showing sheets menu: {e}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
+
 
 # Добавляем новый обработчик для кнопки удаления таблицы
 @router.callback_query(lambda c: c.data.startswith("delete_sheet:"))
