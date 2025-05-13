@@ -86,7 +86,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                         
             # Добавляем кнопки только если есть активные таблицы
             if has_active_sheets:
-                inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
+                inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать1", callback_data="sync_sheets_now")])
                 inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{active_sheet_id}")])
                         
             inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
