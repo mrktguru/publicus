@@ -552,48 +552,7 @@ async def history_handler(message: Message, state: FSMContext):
         f"Здесь будет отображаться история опубликованных постов.",
         parse_mode="HTML"
     )
-# ОБРАБОТЧИК Таблицы Google Sheets для обычных кнопок и для инлайн НАЧАЛО
- 
-@router.message(lambda m: m.text == "Таблицы Google Sheets" or m.text == "Таблицы")
-async def sheets_handler(message: Message, state: FSMContext):
-    """Обработчик кнопки 'Таблицы Google Sheets'"""
-    user_data = await state.get_data()
-    current_channel = user_data.get("current_channel_title", "текущем канале")
-    
-    # Создаем inline клавиатуру для действий с таблицами
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sheet_sync")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
-    ])
-    
-    await message.answer(
-        f"📊 <b>Интеграция с Google Sheets для канала \"{current_channel}\"</b>\n\n"
-        f"Выберите действие с таблицами:",
-        parse_mode="HTML",
-        reply_markup=markup
-    )
 
-@router.callback_query(F.data == "open_sheets_menu")  # Новый обработчик
-async def sheets_callback_handler(callback: CallbackQuery, state: FSMContext):
-    user_data = await state.get_data()
-    current_channel = user_data.get("current_channel_title", "текущем канале")
-    
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sheet_sync")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
-    ])
-    
-    await callback.message.answer(
-        f"📊 <b>Интеграция с Google Sheets для канала \"{current_channel}\"</b>\n\n"
-        f"Выберите действие с таблицами:",
-        parse_mode="HTML",
-        reply_markup=markup
-    )
-    await callback.answer()
-
-# ОБРАБОТЧИК Таблицы Google Sheets для обычных кнопок и для инлайн КОНЕЦ
 
 
 
