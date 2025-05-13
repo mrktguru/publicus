@@ -28,6 +28,9 @@ class GoogleSheetStates(StatesGroup):
     waiting_for_sheet_name = State()
     waiting_for_interval = State()
 
+
+# Добавляем GOOGLE таблицы
+
 @router.message(lambda m: m.text == "Таблицы")
 async def sheets_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -46,45 +49,39 @@ async def sheets_menu(message: Message, state: FSMContext):
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
-            # Только один ORM-запрос для получения активных таблиц
+            # Исправленный ORM-запрос (используем 1 вместо True)
             active_sheets = await session.scalars(
                 select(GoogleSheet).filter(
                     GoogleSheet.chat_id == channel.chat_id,
-                    GoogleSheet.is_active == True
+                    GoogleSheet.is_active == 1  # <-- Исправлено здесь
                 )
             )
             active_sheets_list = active_sheets.all()
+            
+            # Логгируем найденные таблицы
+            logger.info(f"Активные таблицы: {active_sheets_list}")
             
             # Формирование сообщения
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # Динамическое создание клавиатуры в зависимости от наличия активных таблиц
             inline_keyboard = [
                 [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
             ]
             
-            # Добавляем кнопки только если есть активные таблицы
             if active_sheets_list:
                 sheet_id = active_sheets_list[0].id
                 inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
                 inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet_id}")])
             
-            # Добавляем кнопку "Назад" в любом случае
             inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
             
-            # Отправляем сообщение с клавиатурой
             keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
             await message.answer(message_text, parse_mode="HTML", reply_markup=keyboard)
             
-            logger.info(f"Для канала {channel.title} отображено {len(active_sheets_list)} активных таблиц")
-            
     except Exception as e:
         logger.error(f"Ошибка в sheets_menu: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
-
+        await message.answer("⚠️ Произошла ошибка. Попробуйте позже.")
 
 
 # Добавляем новый обработчик для кнопки удаления таблицы
