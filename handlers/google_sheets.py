@@ -735,26 +735,71 @@ async def fix_sheets_cancel(call: CallbackQuery):
     await call.message.edit_text("❌ Операция отменена. Записи таблиц не изменены.")
 
 @router.callback_query(lambda c: c.data == "back_to_sheets")
-async def back_to_sheets_menu(call: CallbackQuery):
+async def back_to_sheets_menu(call: CallbackQuery, state: FSMContext):
     """Обработчик для возврата в меню таблиц"""
-    # Имитируем сообщение с текстом "Таблицы"
-    # Это вызовет обработчик sheets_menu
-    message = call.message
-    message.text = "Таблицы"
-    message.from_user = call.from_user
-    
-    # Сначала отвечаем на колбэк, чтобы убрать часики
+    # Отвечаем на колбэк
     await call.answer()
     
-    # Затем вызываем обработчик sheets_menu
-    await sheets_menu(message, FSMContext(storage=dp.storage, key=StorageKey(
-        chat_id=call.message.chat.id,
-        user_id=call.from_user.id,
-        bot_id=call.bot.id
-    )))
+    user_id = call.from_user.id
     
-    # Скрываем инлайн-клавиатуру в предыдущем сообщении
-    await call.message.edit_reply_markup(reply_markup=None)
+    try:
+        async with AsyncSessionLocal() as session:
+            user = await session.scalar(select(User).filter(User.user_id == user_id))
+            if not user or not user.current_chat_id:
+                await call.message.answer("⚠️ Сначала выберите канал или группу.")
+                return
+            
+            channel = await session.scalar(select(Group).filter(Group.chat_id == user.current_chat_id))
+            if not channel:
+                await call.message.answer("❌ Канал не найден.")
+                return
+            
+            # Запрос активных таблиц
+            active_sheets = await session.scalars(
+                select(GoogleSheet).filter(
+                    GoogleSheet.chat_id == channel.chat_id,
+                    GoogleSheet.is_active == True
+                )
+            )
+            active_sheets_list = active_sheets.all()
+            
+            # Поиск активных таблиц
+            has_active_sheets = False
+            active_sheet_id = None
+            if active_sheets_list:
+                for sheet in active_sheets_list:
+                    if sheet.is_active == 1 or sheet.is_active is True:
+                        has_active_sheets = True
+                        active_sheet_id = sheet.id
+                        logger.info(f"Found active sheet: ID={active_sheet_id}, is_active={sheet.is_active}")
+                        break
+            
+            # Формируем клавиатуру
+            inline_keyboard = [
+                [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
+            ]
+                        
+            # Добавляем кнопки только если есть активные таблицы
+            if has_active_sheets:
+                inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать4", callback_data="sync_sheets_now")])
+                inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{active_sheet_id}")])
+                        
+            inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+            
+            # Отправляем сообщение
+            await call.message.edit_text(
+                f"📊 Интеграция с Google Sheets для канала \"{channel.title}\"",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка в back_to_sheets_menu: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        await call.message.answer("⚠️ Ошибка загрузки меню таблиц.")
 
 @router.callback_query(lambda c: c.data == "back_to_main")
 async def back_to_main_menu(call: CallbackQuery):
