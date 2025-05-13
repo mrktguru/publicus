@@ -534,7 +534,7 @@ async def process_sync_interval(message: Message, state: FSMContext):
                 f"Используйте кнопку 'Синхронизировать' для немедленной синхронизации.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔄 Синхронизировать сейчас", callback_data="sync_sheets_now")],
+                    [InlineKeyboardButton(text="🔄 Синхронизировать сейчас3", callback_data="sync_sheets_now")],
                     [InlineKeyboardButton(text="◀️ Вернуться в меню", callback_data="back_to_main")]
                 ])
             )
