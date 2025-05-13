@@ -1,9 +1,8 @@
 # database/models/google_sheet.py
 import datetime as dt
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import BigInteger, DateTime, Boolean, Text, String, Integer, Index
+from sqlalchemy import BigInteger, DateTime, Text, String, Integer, Index
 from .base import Base
-
 
 class GoogleSheet(Base):
     """Модель для хранения информации о подключенных Google Sheets"""
