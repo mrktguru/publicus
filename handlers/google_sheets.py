@@ -817,4 +817,69 @@ async def back_to_main_menu(call: CallbackQuery):
     await call.answer()
 
 
+@router.callback_query(lambda c: c.data == "open_sheets_menu")
+async def open_sheets_menu_handler(callback: CallbackQuery, state: FSMContext):
+    """Обработчик для открытия меню таблиц Google Sheets по инлайн-кнопке"""
+    user_id = callback.from_user.id
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            user = await session.scalar(select(User).filter(User.user_id == user_id))
+            if not user or not user.current_chat_id:
+                await callback.answer("⚠️ Сначала выберите канал или группу.", show_alert=True)
+                return
+            
+            channel = await session.scalar(select(Group).filter(Group.chat_id == user.current_chat_id))
+            if not channel:
+                await callback.answer("❌ Канал не найден.", show_alert=True)
+                return
+            
+            # Запрос активных таблиц
+            active_sheets = await session.scalars(
+                select(GoogleSheet).filter(
+                    GoogleSheet.chat_id == channel.chat_id,
+                    GoogleSheet.is_active == True
+                )
+            )
+            active_sheets_list = active_sheets.all()
+            
+            # Формируем клавиатуру
+            inline_keyboard = [
+                [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
+            ]
+            
+            # Добавляем кнопки только если есть активные таблицы
+            has_active_sheets = False
+            active_sheet_id = None
+            if active_sheets_list:
+                for sheet in active_sheets_list:
+                    if sheet.is_active == 1 or sheet.is_active is True:
+                        has_active_sheets = True
+                        active_sheet_id = sheet.id
+                        break
+            
+            # Добавляем кнопки только если есть активные таблицы
+            if has_active_sheets:
+                inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
+                inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{active_sheet_id}")])
+            
+            inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+            
+            # Отправляем сообщение с клавиатурой
+            await callback.message.answer(
+                f"📊 Интеграция с Google Sheets для канала \"{channel.title}\"",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            
+            # Отвечаем на коллбэк
+            await callback.answer()
+            
+    except Exception as e:
+        logger.error(f"Ошибка при открытии меню таблиц через инлайн-кнопку: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        await callback.answer("⚠️ Ошибка загрузки меню таблиц.", show_alert=True)
 
