@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-
 import asyncio
 from logging.config import fileConfig
 from pathlib import Path
@@ -14,16 +13,24 @@ from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import make_url
 
 # ======================================================================
-#  импортируем MetaData всех моделей
+# 1. Добавляем путь к корню проекта в sys.path
+# ======================================================================
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
+
+# ======================================================================
+# 2. Импортируем MetaData всех моделей
 # ======================================================================
 from database.db import engine as async_engine  # AsyncEngine приложения
 from database.models import Base                # declarative_base()
-from database.models import User, Group, GoogleSheet  # Импорт всех моделей
+from database.models import User, Group, GoogleSheet
 # ======================================================================
+
+
 # Получаем URL из конфига
 config = context.config
 alembic_config = config.get_section(config.config_ini_section)
-original_url = alembic_config.get("sqlalchemy.url")  # Исправлено!
+original_url = alembic_config.get("sqlalchemy.url")
 
 # Конвертируем async-URL в sync-URL
 SYNC_DATABASE_URL = str(
