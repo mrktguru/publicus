@@ -288,93 +288,94 @@ class GoogleSheetsClient:
         return None
         
     def get_upcoming_posts(self, spreadsheet_id, sheet_name="Контент-план"):
-        """
-        Получение постов, запланированных к публикации в ближайшее время.
+    """
+    Получение постов, запланированных к публикации в ближайшее время.
+    
+    Args:
+        spreadsheet_id: ID Google Таблицы
+        sheet_name: Имя листа (по умолчанию "Контент-план")
         
-        Args:
-            spreadsheet_id: ID Google Таблицы
-            sheet_name: Имя листа (по умолчанию "Контент-план")
-            
-        Returns:
-            list: Список словарей с данными о постах
-        """
-        logger.info(f"Looking for upcoming posts in sheet {spreadsheet_id}, sheet {sheet_name}")
+    Returns:
+        list: Список словарей с данными о постах
+    """
+    logger.info(f"Looking for upcoming posts in sheet {spreadsheet_id}, sheet {sheet_name}")
+    
+    # Формируем диапазон для запроса всех данных листа (начиная со второй строки)
+    range_name = f"'{sheet_name}'!A2:I"
+    
+    try:
+        data = self.get_sheet_data(spreadsheet_id, range_name)
+        logger.info(f"Found {len(data)} rows in content plan")
         
-        # Формируем диапазон для запроса всех данных листа (начиная со второй строки)
-        range_name = f"'{sheet_name}'!A2:I"
+        upcoming_posts = []
+        now = datetime.now()
+        check_interval = now + timedelta(minutes=30)  # Проверяем посты на ближайшие 30 минут
         
-        try:
-            data = self.get_sheet_data(spreadsheet_id, range_name)
-            logger.info(f"Found {len(data)} rows in content plan")
-            
-            upcoming_posts = []
-            now = datetime.now()
-            check_interval = now + timedelta(minutes=30)  # Проверяем посты на ближайшие 30 минут
-            
-            # Обработка полученных данных
-            for row_index, row in enumerate(data, start=2):  # Начинаем с индекса 2, т.к. первая строка - заголовки
-                # Проверяем, что у нас достаточно данных в строке
-                if len(row) < 8:
-                    logger.warning(f"Row {row_index} has insufficient data: {row}")
+        # Обработка полученных данных
+        for row_index, row in enumerate(data, start=2):  # Начинаем с индекса 2, т.к. первая строка - заголовки
+            # Проверяем, что у нас достаточно данных в строке
+            if len(row) < 8:
+                logger.warning(f"Row {row_index} has insufficient data: {row}")
+                continue
+                
+            try:
+                # Извлекаем данные из строки
+                post_id = row[0]
+                channel = row[1]
+                date_str = row[2]
+                time_str = row[3]
+                status = row[7] if len(row) > 7 else ""
+                
+                # Проверяем статус
+                if status.lower() != "ожидает":
+                    logger.debug(f"Skipping row {row_index}, status is not 'ожидает': {status}")
                     continue
                     
+                # Парсим дату и время
                 try:
-                    # Извлекаем данные из строки
-                    post_id = row[0]
-                    channel = row[1]
-                    date_str = row[2]
-                    time_str = row[3]
-                    status = row[7] if len(row) > 7 else ""
-                    
-                    # Проверяем статус
-                    if status.lower() != "ожидает":
-                        logger.debug(f"Skipping row {row_index}, status is not 'ожидает': {status}")
+                    date_parts = date_str.split('.')
+                    if len(date_parts) != 3:
+                        logger.warning(f"Invalid date format in row {row_index}: {date_str}")
                         continue
                         
-                    # Парсим дату и время
-                    try:
-                        date_parts = date_str.split('.')
-                        if len(date_parts) != 3:
-                            logger.warning(f"Invalid date format in row {row_index}: {date_str}")
-                            continue
-                            
-                        day, month, year = map(int, date_parts)
-                        
-                        time_parts = time_str.split(':')
-                        if len(time_parts) != 2:
-                            logger.warning(f"Invalid time format in row {row_index}: {time_str}")
-                            continue
-                            
-                        hour, minute = map(int, time_parts)
-                        
-                        # Формируем дату и время публикации
-                        publish_datetime = datetime(year, month, day, hour, minute)
-                    except Exception as e:
-                        logger.warning(f"Error parsing datetime in row {row_index}: {e}")
-                        continue
+                    day, month, year = map(int, date_parts)
                     
-                    # Проверяем, находится ли время публикации в интервале проверки
-                    if now <= publish_datetime <= check_interval:
-                        post_data = {
-                            'id': post_id,
-                            'channel': channel,
-                            'publish_datetime': publish_datetime,
-                            'title': row[4] if len(row) > 4 else "",
-                            'text': row[5] if len(row) > 5 else "",
-                            'media': row[6] if len(row) > 6 else "",
-                            'row_index': row_index  # Индекс строки в таблице для обновления
-                        }
-                        upcoming_posts.append(post_data)
-                        logger.info(f"Found upcoming post at {publish_datetime}: {post_id}")
+                    time_parts = time_str.split(':')
+                    if len(time_parts) != 2:
+                        logger.warning(f"Invalid time format in row {row_index}: {time_str}")
+                        continue
+                        
+                    hour, minute = map(int, time_parts)
+                    
+                    # Формируем дату и время публикации
+                    publish_datetime = datetime(year, month, day, hour, minute)
+                except Exception as e:
+                    logger.warning(f"Error parsing datetime in row {row_index}: {e}")
+                    continue
+                
+                # Проверяем, находится ли время публикации в интервале проверки
+                if now <= publish_datetime <= check_interval:
+                    post_data = {
+                        'id': post_id,
+                        'channel': channel,
+                        'publish_datetime': publish_datetime,
+                        'title': row[4] if len(row) > 4 else "",
+                        'text': row[5] if len(row) > 5 else "",
+                        'media': row[6] if len(row) > 6 else "",
+                        'row_index': row_index  # Индекс строки в таблице для обновления
+                    }
+                    upcoming_posts.append(post_data)
+                    logger.info(f"Found upcoming post at {publish_datetime}: {post_id}")
                 except Exception as e:
                     logger.error(f"Error processing row {row_index}: {e}")
                     continue
                     
-            return upcoming_posts
-        
-        except Exception as e:
-            logger.error(f"Error getting upcoming posts: {e}")
-            return []
+                return upcoming_posts
+            
+                except Exception as e:
+                    logger.error(f"Error getting upcoming posts: {e}")
+                    return []
+
     
     def update_post_status(self, spreadsheet_id, sheet_name, row_index, status):
         """
@@ -436,3 +437,33 @@ class GoogleSheetsClient:
         except Exception as e:
             logger.error(f"Error adding to history: {e}")
             return None
+
+
+def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
+    """
+    Обновляет значение конкретной ячейки в таблице.
+    
+    Args:
+        spreadsheet_id: ID Google Таблицы
+        sheet_name: Имя листа
+        row: Номер строки (начиная с 1)
+        col: Буква столбца (A, B, C, ...)
+        value: Новое значение
+    """
+    try:
+        range_name = f"'{sheet_name}'!{col}{row}"
+        body = {
+            'values': [[value]]
+        }
+        
+        result = self.service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=range_name,
+            valueInputOption='RAW',
+            body=body
+        ).execute()
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error updating cell {col}{row} in sheet {sheet_name}: {e}")
+        raise
