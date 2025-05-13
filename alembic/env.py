@@ -7,6 +7,8 @@
   только во время миграций.
 """
 
+
+
 from __future__ import annotations
 
 import os
@@ -35,19 +37,17 @@ from database.models import Base                # declarative_base()
 from database.models import User, Group, GoogleSheet  # Импорт всех моделей
 # ======================================================================
 
-# -------------------------------------------------
-# Alembic Config — берётся из alembic.ini
-# -------------------------------------------------
-config = context.config
-fileConfig(config.config_file_name)  # подключаем логирование Alembic
 
-# ----------------------------------------------------------------------
-# Создаём СИНХРОННЫЙ URL для миграций
-#   sqlite+aiosqlite:///bot.db  →  sqlite:///bot.db
-# ----------------------------------------------------------------------
+# Получаем URL из alembic.ini
+config = context.config
+alembic_config = config.get_section(config.config_ini_section)
+original_url = alembic_config.get("sqlalchemy.url")
+
+# Конвертируем async-URL в sync-URL
 SYNC_DATABASE_URL = str(
-    make_url(str(async_engine.url)).set(drivername="sqlite")
+    make_url(original_url).set(drivername="sqlite")
 )
+
 
 # ----------------------------------------------------------------------
 # OFF-line режим — Alembic формирует SQL-файл без подключения к БД
