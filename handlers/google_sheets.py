@@ -37,39 +37,36 @@ async def sheets_menu(message: Message, state: FSMContext):
     
     try:
         async with AsyncSessionLocal() as session:
-            # Получаем пользователя и его выбранный канал
             user = await session.scalar(select(User).filter(User.user_id == user_id))
             if not user or not user.current_chat_id:
-                await message.answer("⚠️ Сначала выберите канал или группу для работы.")
+                await message.answer("⚠️ Сначала выберите канал или группу.")
                 return
             
-            # Проверяем существование канала
             channel = await session.scalar(select(Group).filter(Group.chat_id == user.current_chat_id))
             if not channel:
-                await message.answer("❌ Канал не найден в базе данных.")
+                await message.answer("❌ Канал не найден.")
                 return
             
-            # Исправленный ORM-запрос (используем 1 вместо True)
+            # Запрос активных таблиц
             active_sheets = await session.scalars(
                 select(GoogleSheet).filter(
                     GoogleSheet.chat_id == channel.chat_id,
-                    GoogleSheet.is_active == 1  # <-- Исправлено здесь
+                    GoogleSheet.is_active == 1
                 )
             )
             active_sheets_list = active_sheets.all()
             
-            # Логгируем найденные таблицы
+            # Логирование для отладки
             logger.info(f"Активные таблицы: {active_sheets_list}")
-            
-            # Формирование сообщения
-            message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
-            message_text += "Выберите действие с таблицами:"
-            
+            logger.info(f"is_active значений: {[s.is_active for s in active_sheets_list]}")
+
+            # Формируем клавиатуру
             inline_keyboard = [
                 [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
             ]
             
-            if active_sheets_list and any(sheet.is_active == 1 for sheet in active_sheets_list):
+            # Добавляем кнопки только если есть активные таблицы
+            if active_sheets_list and any(s.is_active == 1 for s in active_sheets_list):
                 sheet_id = active_sheets_list[0].id
                 inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
                 inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet_id}")])
@@ -77,11 +74,15 @@ async def sheets_menu(message: Message, state: FSMContext):
             inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
-            await message.answer(message_text, parse_mode="HTML", reply_markup=keyboard)
+            await message.answer(
+                f"📊 Интеграция с Google Sheets для канала \"{channel.title}\"",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
             
     except Exception as e:
-        logger.error(f"Ошибка в sheets_menu: {e}")
-        await message.answer("⚠️ Произошла ошибка. Попробуйте позже.")
+        logger.error(f"Ошибка: {e}")
+        await message.answer("⚠️ Ошибка загрузки меню.")
 
 
 # Добавляем новый обработчик для кнопки удаления таблицы
