@@ -69,7 +69,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                 [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
             ]
             
-            if active_sheets_list:
+            if active_sheets_list and any(sheet.is_active == 1 for sheet in active_sheets_list):
                 sheet_id = active_sheets_list[0].id
                 inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
                 inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet_id}")])
