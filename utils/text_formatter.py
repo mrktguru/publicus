@@ -1,25 +1,14 @@
 # utils/text_formatter.py
+
 import re
-import html
 import logging
 
-# Настройка логирования
 logger = logging.getLogger(__name__)
 
 def format_google_sheet_text(text):
     """
-    Преобразование текста из Google Таблицы в формат HTML для Telegram.
-    
-    Поддерживаются следующие маркеры форматирования:
-    - *Жирный текст** -> <b>Жирный текст</b>
-    - __Курсив__ -> <i>Курсив</i>
-    - -Подзаголовок-- -> <b>Подзаголовок</b>\n
-    - [Ссылка](URL) -> <a href="URL">Ссылка</a>
-    - \n -> перенос строки
-    - \n\n -> пустая строка между параграфами
-    
-    Также поддерживаются готовые HTML-теги:
-    - <b>, <i>, <u>, <s>, <a>, <pre>, <code>
+    Форматирует текст из Google Sheets для публикации в Telegram.
+    Заменяет стандартные форматы на HTML-форматирование Telegram.
     
     Args:
         text: Исходный текст из таблицы
@@ -29,68 +18,54 @@ def format_google_sheet_text(text):
     """
     if not text:
         return ""
+        
+    # Замена \n на перенос строки
+    formatted_text = text.replace('\\n', '\n')
     
-    try:
-        # Заменяем явные переносы строк
-        text = text.replace('\\n', '\n')
-        
-        # Проверка на наличие HTML-тегов
-        html_tags = ['<b>', '<i>', '<u>', '<s>', '<a', '<pre>', '<code>']
-        has_html = any(tag in text for tag in html_tags)
-        
-        # Если уже есть HTML-теги, предполагаем что это готовый HTML
-        if not has_html:
-            # Обработка жирного текста: *Жирный текст**
-            text = re.sub(r'\*(.*?)\*\*', r'<b>\1</b>', text)
-            
-            # Обработка курсива: __Курсив__
-            text = re.sub(r'__(.*?)__', r'<i>\1</i>', text)
-            
-            # Обработка подзаголовков: -Подзаголовок--
-            text = re.sub(r'\-(.*?)\-\-', r'<b>\1</b>\n', text)
-            
-            # Обработка ссылок: [Текст](URL)
-            text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', text)
-            
-            # Экранирование специальных символов HTML после замен
-            text = html.escape(text, quote=False)
-            
-            # Восстанавливаем теги, которые мы добавили
-            text = text.replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')
-            text = text.replace('&lt;i&gt;', '<i>').replace('&lt;/i&gt;', '</i>')
-            text = text.replace('&lt;a href=', '<a href=').replace('&lt;/a&gt;', '</a>')
-        
-        # Убеждаемся, что все теги закрыты правильно
-        if text.count('<b>') != text.count('</b>'):
-            logger.warning(f"Unclosed <b> tags in text: {text[:100]}...")
-        if text.count('<i>') != text.count('</i>'):
-            logger.warning(f"Unclosed <i> tags in text: {text[:100]}...")
-        if text.count('<a') != text.count('</a>'):
-            logger.warning(f"Unclosed <a> tags in text: {text[:100]}...")
-            
-        return text
-    except Exception as e:
-        logger.error(f"Error formatting text: {e}")
-        # В случае ошибки возвращаем исходный текст
-        return text
+    # Заменяем простое форматирование на HTML
+    formatted_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', formatted_text)  # **жирный**
+    formatted_text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', formatted_text)      # *курсив*
+    formatted_text = re.sub(r'__(.*?)__', r'<u>\1</u>', formatted_text)      # __подчеркнутый__
+    formatted_text = re.sub(r'~~(.*?)~~', r'<s>\1</s>', formatted_text)      # ~~зачеркнутый~~
+    
+    # Замена URL на ссылки
+    url_pattern = r'(?<![\w\d])https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[/\w\.-]*(?:\?[-\w&=%./]*)?(?:#[\w-]*)?'
+    formatted_text = re.sub(url_pattern, r'<a href="\g<0>">\g<0></a>', formatted_text)
+    
+    return formatted_text
 
-def prepare_media_urls(media_str):
+def prepare_media_urls(media_text):
     """
-    Подготовка списка URL медиа-файлов из строки.
+    Обрабатывает содержимое ячейки медиа и извлекает URL изображений.
     
     Args:
-        media_str: Строка с URL (разделенные запятыми)
+        media_text: Текст из ячейки медиа
         
     Returns:
-        list: Список URL медиа-файлов
+        list: Список URL изображений
     """
-    if not media_str:
+    if not media_text:
         return []
+        
+    # Разделяем по новым строкам или запятым (для нескольких URL)
+    separators = ['\n', ',', ';']
+    urls = []
     
-    try:
-        # Разделяем строку по запятым и удаляем пробелы
-        media_urls = [url.strip() for url in media_str.split(',') if url.strip()]
-        return media_urls
-    except Exception as e:
-        logger.error(f"Error preparing media URLs: {e}")
-        return []
+    # Пробуем разные разделители
+    for sep in separators:
+        if sep in media_text:
+            urls = [url.strip() for url in media_text.split(sep) if url.strip()]
+            break
+    else:
+        # Если разделители не найдены, считаем, что это один URL
+        urls = [media_text.strip()]
+    
+    # Отбираем только валидные URL
+    valid_urls = []
+    for url in urls:
+        if url.startswith(('http://', 'https://')):
+            valid_urls.append(url)
+        else:
+            logger.warning(f"Invalid URL format: {url}")
+    
+    return valid_urls
