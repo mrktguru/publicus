@@ -13,7 +13,7 @@ class GoogleSheet(Base):
     spreadsheet_id: Mapped[str] = mapped_column(String)  # ID Google Таблицы
     sheet_name: Mapped[str] = mapped_column(String, default="Контент-план")  # Имя листа
     last_sync: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)  # Время последней синхронизации
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # Активно ли подключение
+    is_active: Mapped[bool] = mapped_column(Boolean, default=1)  # Активно ли подключение
     created_by: Mapped[int] = mapped_column(BigInteger)  # ID создателя
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)  # Дата создания
     sync_interval: Mapped[int] = mapped_column(Integer, default=15)  # Интервал синхронизации в минутах
