@@ -16,6 +16,38 @@ log = logging.getLogger(__name__)
 # Сохраняем глобальный объект планировщика для доступа из разных функций
 _scheduler = None
 
+# начало загрузки изображений из URL
+import aiohttp
+from io import BytesIO
+from utils.text_formatter import format_google_sheet_text, prepare_media_urls
+
+async def download_image(url: str):
+    """
+    Загружает изображение по URL.
+    
+    Args:
+        url: URL изображения
+        
+    Returns:
+        BytesIO: Объект с содержимым изображения или None в случае ошибки
+    """
+    log.info(f"Downloading image from URL: {url}")
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, timeout=20) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    log.info(f"Successfully downloaded image, size: {len(content)} bytes")
+                    return BytesIO(content)
+                else:
+                    log.error(f"Failed to download image, HTTP status: {response.status}")
+                    return None
+        except Exception as e:
+            log.error(f"Error downloading image: {e}")
+            return None
+# конец загрузки изображений из URL
+
+
 def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot):
     """Регистрирует периодические задачи."""
     global _scheduler
@@ -146,6 +178,8 @@ async def check_scheduled_posts(bot: Bot):
         log.error(f"Error checking scheduled posts: {e}")
 
 
+# Заменить существующую функцию check_google_sheets в scheduler.py
+
 async def check_google_sheets(bot: Bot):
     """Проверяет подключенные Google Таблицы на наличие запланированных постов."""
     log.info(f"Checking Google Sheets at {datetime.now(timezone.utc)}")
@@ -194,33 +228,72 @@ async def check_google_sheets(bot: Bot):
                                 if channel:
                                     channel_id = channel.chat_id
                             
-                            # Отправляем сообщение в указанный канал
+                            # Проверяем наличие медиа
                             if post.get('media'):
                                 # Подготавливаем URL медиа
                                 media_urls = prepare_media_urls(post['media'])
+                                log.info(f"Prepared media URLs: {media_urls}")
                                 
                                 if media_urls:
-                                    # Отправляем фото
-                                    await bot.send_photo(
-                                        chat_id=channel_id,
-                                        photo=media_urls[0],  # Пока берем только первое изображение
-                                        caption=formatted_text,
-                                        parse_mode="HTML"
-                                    )
+                                    # Проверяем, является ли медиа URL или file_id
+                                    media_url = media_urls[0]
+                                    
+                                    if media_url.startswith(('http://', 'https://')):
+                                        # Это URL, пробуем загрузить изображение
+                                        image_data = await download_image(media_url)
+                                        
+                                        if image_data:
+                                            # Отправляем фото
+                                            await bot.send_photo(
+                                                chat_id=channel_id,
+                                                photo=image_data,
+                                                caption=formatted_text,
+                                                parse_mode="HTML"
+                                            )
+                                            log.info(f"Sent photo from URL for post {post['id']} to channel {channel_id}")
+                                        else:
+                                            # Если не удалось скачать изображение, отправляем только текст
+                                            await bot.send_message(
+                                                chat_id=channel_id,
+                                                text=formatted_text + "\n\n[Не удалось загрузить изображение]",
+                                                parse_mode="HTML"
+                                            )
+                                            log.warning(f"Failed to download image from URL, sent text only for post {post['id']}")
+                                    else:
+                                        # Вероятно, это file_id - пробуем отправить как есть
+                                        try:
+                                            await bot.send_photo(
+                                                chat_id=channel_id,
+                                                photo=media_url,
+                                                caption=formatted_text,
+                                                parse_mode="HTML"
+                                            )
+                                            log.info(f"Sent photo with file_id for post {post['id']} to channel {channel_id}")
+                                        except Exception as media_err:
+                                            log.error(f"Error sending photo with file_id: {media_err}")
+                                            # Отправляем сообщение без медиа
+                                            await bot.send_message(
+                                                chat_id=channel_id,
+                                                text=formatted_text,
+                                                parse_mode="HTML"
+                                            )
+                                            log.info(f"Sent text only message for post {post['id']} to channel {channel_id}")
                                 else:
-                                    # Если URL медиа некорректны, отправляем только текст
+                                    # Отправляем сообщение без медиа, так как нет корректных URL
                                     await bot.send_message(
                                         chat_id=channel_id,
                                         text=formatted_text,
                                         parse_mode="HTML"
                                     )
+                                    log.info(f"Sent text only message (no valid media URLs) for post {post['id']} to channel {channel_id}")
                             else:
-                                # Только текст
+                                # Отправляем сообщение без медиа
                                 await bot.send_message(
                                     chat_id=channel_id,
                                     text=formatted_text,
                                     parse_mode="HTML"
                                 )
+                                log.info(f"Sent text only message (no media) for post {post['id']} to channel {channel_id}")
                             
                             # Обновляем статус в таблице
                             sheets_client.update_post_status(
@@ -265,6 +338,7 @@ async def check_google_sheets(bot: Bot):
             
     except Exception as e:
         log.error(f"Error checking Google Sheets: {e}")
+
         
 
 
