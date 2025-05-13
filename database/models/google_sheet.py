@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import BigInteger, DateTime, Boolean, Text, String, Integer, Index
 from .base import Base
 
+
 class GoogleSheet(Base):
     """Модель для хранения информации о подключенных Google Sheets"""
     __tablename__ = "google_sheets"
@@ -13,7 +14,7 @@ class GoogleSheet(Base):
     spreadsheet_id: Mapped[str] = mapped_column(String)  # ID Google Таблицы
     sheet_name: Mapped[str] = mapped_column(String, default="Контент-план")  # Имя листа
     last_sync: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)  # Время последней синхронизации
-    is_active = Column(Integer, default=1)  # Активно ли подключение
+    is_active: Mapped[int] = mapped_column(Integer, default=1)  # Активно ли подключение (1 вместо True)
     created_by: Mapped[int] = mapped_column(BigInteger)  # ID создателя
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)  # Дата создания
     sync_interval: Mapped[int] = mapped_column(Integer, default=15)  # Интервал синхронизации в минутах
