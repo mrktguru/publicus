@@ -287,7 +287,8 @@ async def process_sync_interval(message: Message, state: FSMContext):
         await state.clear()
         
     except Exception as e:
-        # ... (обработка ошибок остается без изменений) ...
+        logger.error(f"Error: {e}")
+        await message.answer("Error occurred")
 
 @router.callback_query(lambda c: c.data == "back_to_sheets")
 async def return_to_sheets_menu(call: CallbackQuery, state: FSMContext):
