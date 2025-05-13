@@ -59,6 +59,7 @@ async def sheets_menu(message: Message, state: FSMContext):
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
+            # НАЙДИТЕ ЭТОТ КОД (примерно строки 60-95)
             # Получаем активные таблицы через прямой SQL-запрос для надежности
             from sqlalchemy import text
             sql_query = text(f"SELECT COUNT(*) FROM google_sheets WHERE chat_id = {channel_id} AND is_active = 1")
@@ -71,11 +72,8 @@ async def sheets_menu(message: Message, state: FSMContext):
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # Исправление в функции sheets_menu, примерно строка 66-95
             if active_count > 0:
                 # Получаем первую активную таблицу
-                # Модифицированный код с исправлением
-                # Убираем зависимость от SQL-запроса и используем только SQLAlchemy
                 sheets_q = select(GoogleSheet).filter(
                     GoogleSheet.chat_id == channel_id,
                     GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
@@ -83,21 +81,65 @@ async def sheets_menu(message: Message, state: FSMContext):
                 sheets_result = await session.execute(sheets_q)
                 active_sheets = sheets_result.scalars().all()
                 
-                if active_sheets:  # Есть активные таблицы через SQLAlchemy
+                if active_sheets:  # Дополнительная проверка
                     sheet = active_sheets[0]
                     # Создаем клавиатуру С кнопкой синхронизации
+                    logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                         [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
                         [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
-                else:  # Нет активных таблиц через SQLAlchemy
+                else:
+                    # Если SQL-запрос показал активные таблицы, но SQLAlchemy их не нашел
+                    logger.warning("SQL query found active sheets but SQLAlchemy query returned empty")
                     # Создаем клавиатуру БЕЗ кнопки синхронизации
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
+            else:
+                # Нет активных таблиц
+                logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+                ])
+            
+            # ЗАМЕНИТЕ НА ЭТОТ КОД:
+            # Создаем базовое сообщение
+            message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
+            message_text += "Выберите действие с таблицами:"
+            
+            # ИСПОЛЬЗУЕМ ТОЛЬКО ORM-запрос, БЕЗ прямого SQL
+            sheets_q = select(GoogleSheet).filter(
+                GoogleSheet.chat_id == channel_id,
+                GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
+            )
+            sheets_result = await session.execute(sheets_q)
+            active_sheets = sheets_result.scalars().all()
+            
+            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {len(active_sheets)} active sheets (ORM query)")
+            
+            if active_sheets:
+                # Есть активные таблицы - показываем кнопку синхронизации
+                sheet = active_sheets[0]
+                logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+                    [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
+                    [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+                ])
+            else:
+                # Нет активных таблиц - НЕ показываем кнопку синхронизации
+                logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+                ])
+
 
                 
 
