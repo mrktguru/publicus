@@ -32,6 +32,7 @@ from sqlalchemy.engine import make_url
 # ======================================================================
 from database.db import engine as async_engine  # AsyncEngine приложения
 from database.models import Base                # declarative_base()
+from database.models import User, Group, GoogleSheet  # Импорт всех моделей
 # ======================================================================
 
 # -------------------------------------------------
