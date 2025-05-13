@@ -16,7 +16,7 @@ from sqlalchemy import select, text
 
 
 from database.db import AsyncSessionLocal
-from database.models import User, GoogleSheet
+from database.models import User, GoogleSheet, Group
 from utils.google_sheets import GoogleSheetsClient
 
 
