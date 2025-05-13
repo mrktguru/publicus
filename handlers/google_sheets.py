@@ -30,125 +30,57 @@ class GoogleSheetStates(StatesGroup):
 
 @router.message(lambda m: m.text == "Таблицы")
 async def sheets_menu(message: Message, state: FSMContext):
-    """Обработчик для меню Google Таблиц."""
-    logger.info("Entering sheets_menu function with clean implementation")
     user_id = message.from_user.id
     
     try:
         async with AsyncSessionLocal() as session:
-            # Получаем текущий выбранный канал пользователя
-            user_q = select(User).filter(User.user_id == user_id)
-            user_result = await session.execute(user_q)
-            user = user_result.scalar_one_or_none()
-            
+            # Получаем пользователя и его выбранный канал
+            user = await session.scalar(select(User).filter(User.user_id == user_id))
             if not user or not user.current_chat_id:
-                await message.answer(
-                    "⚠️ Сначала выберите канал или группу для работы.\n"
-                    "Используйте кнопку 'Сменить группу' в главном меню."
-                )
+                await message.answer("⚠️ Сначала выберите канал или группу для работы.")
                 return
             
-            channel_id = user.current_chat_id
-            
-            # Получаем канал из БД
-            channel_q = select(Group).filter(Group.chat_id == channel_id)
-            channel_result = await session.execute(channel_q)
-            channel = channel_result.scalar_one_or_none()
-            
+            # Проверяем существование канала
+            channel = await session.scalar(select(Group).filter(Group.chat_id == user.current_chat_id))
             if not channel:
                 await message.answer("❌ Канал не найден в базе данных.")
                 return
             
-            # НАЙДИТЕ ЭТОТ КОД (примерно строки 60-95)
-            # Получаем активные таблицы через прямой SQL-запрос для надежности
-            from sqlalchemy import text
-            sql_query = text(f"SELECT COUNT(*) FROM google_sheets WHERE chat_id = {channel_id} AND is_active = 1")
-            result = await session.execute(sql_query)
-            active_count = result.scalar_one()
-            
-            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {active_count} active sheets (SQL query)")
-            
-            # Создаем базовое сообщение для обоих случаев
-            message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
-            message_text += "Выберите действие с таблицами:"
-            
-            if active_count > 0:
-                # Получаем первую активную таблицу
-                sheets_q = select(GoogleSheet).filter(
-                    GoogleSheet.chat_id == channel_id,
-                    GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
+            # Только один ORM-запрос для получения активных таблиц
+            active_sheets = await session.scalars(
+                select(GoogleSheet).filter(
+                    GoogleSheet.chat_id == channel.chat_id,
+                    GoogleSheet.is_active == True
                 )
-                sheets_result = await session.execute(sheets_q)
-                active_sheets = sheets_result.scalars().all()
-                
-                if active_sheets:  # Дополнительная проверка
-                    sheet = active_sheets[0]
-                    # Создаем клавиатуру С кнопкой синхронизации
-                    logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
-                        [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                    ])
-                else:
-                    # Если SQL-запрос показал активные таблицы, но SQLAlchemy их не нашел
-                    logger.warning("SQL query found active sheets but SQLAlchemy query returned empty")
-                    # Создаем клавиатуру БЕЗ кнопки синхронизации
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                    ])
-            else:
-                # Нет активных таблиц
-                logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                ])
+            )
+            active_sheets_list = active_sheets.all()
             
-            # ЗАМЕНИТЕ НА ЭТОТ КОД:
-            # Создаем базовое сообщение
+            # Формирование сообщения
             message_text = f"📊 <b>Интеграция с Google Sheets для канала \"{channel.title}\"</b>\n\n"
             message_text += "Выберите действие с таблицами:"
             
-            # ИСПОЛЬЗУЕМ ТОЛЬКО ORM-запрос, БЕЗ прямого SQL
-            sheets_q = select(GoogleSheet).filter(
-                GoogleSheet.chat_id == channel_id,
-                GoogleSheet.is_active == 1  # Используем 1 вместо True для SQLite
-            )
-            sheets_result = await session.execute(sheets_q)
-            active_sheets = sheets_result.scalars().all()
+            # Динамическое создание клавиатуры в зависимости от наличия активных таблиц
+            inline_keyboard = [
+                [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")]
+            ]
             
-            logger.info(f"Channel {channel.title} (ID: {channel_id}) has {len(active_sheets)} active sheets (ORM query)")
+            # Добавляем кнопки только если есть активные таблицы
+            if active_sheets_list:
+                sheet_id = active_sheets_list[0].id
+                inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
+                inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet_id}")])
             
-            if active_sheets:
-                # Есть активные таблицы - показываем кнопку синхронизации
-                sheet = active_sheets[0]
-                logger.info(f"Creating keyboard WITH sync button for channel {channel.title}")
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                    [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
-                    [InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet.id}")],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                ])
-            else:
-                # Нет активных таблиц - НЕ показываем кнопку синхронизации
-                logger.info(f"Creating keyboard WITHOUT sync button for channel {channel.title}")
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
-                ])
-
-
-                
-
+            # Добавляем кнопку "Назад" в любом случае
+            inline_keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
             
-            # Отправляем сообщение с соответствующей клавиатурой
+            # Отправляем сообщение с клавиатурой
+            keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
             await message.answer(message_text, parse_mode="HTML", reply_markup=keyboard)
             
+            logger.info(f"Для канала {channel.title} отображено {len(active_sheets_list)} активных таблиц")
+            
     except Exception as e:
-        logger.error(f"Error in sheets_menu: {str(e)}")
+        logger.error(f"Ошибка в sheets_menu: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         await message.answer("⚠️ Произошла ошибка при получении данных о таблицах. Пожалуйста, попробуйте позже.")
