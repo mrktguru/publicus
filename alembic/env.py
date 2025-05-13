@@ -32,6 +32,10 @@ config = context.config
 alembic_config = config.get_section(config.config_ini_section)
 original_url = alembic_config.get("sqlalchemy.url")
 
+# Если URL не найден, вызываем ошибку
+if not original_url:
+    raise ValueError("Не задан sqlalchemy.url в alembic.ini")
+
 # Конвертируем async-URL в sync-URL
 SYNC_DATABASE_URL = str(
     make_url(original_url).set(drivername="sqlite")
