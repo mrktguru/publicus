@@ -168,7 +168,7 @@ async def delete_sheet_callback(call: CallbackQuery):
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="➕ Подключить таблицу", callback_data="sheet_connect")],
-                        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")],
+                        [InlineKeyboardButton(text="🔄 Синхронизировать2", callback_data="sync_sheets_now")],
                         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
                     ])
                 )
