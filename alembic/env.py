@@ -1,27 +1,9 @@
 # alembic/env.py
 
-
-"""Alembic migration environment
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* Приложение использует **async-engine** (sqlite+aiosqlite).
-* Alembic работает синхронно ⇒ создаём временный **sync-engine**
-  только во время миграций.
-"""
-
-
-
 from __future__ import annotations
 
 import os
 import sys
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Позволяем env.py видеть пакет database/ и другие модули вашего приложения
-here = os.path.dirname(__file__)                                  # .../publicus/alembic
-root = os.path.abspath(os.path.join(here, os.pardir))            # .../publicus
-sys.path.insert(0, root)
-# ──────────────────────────────────────────────────────────────────────────────
 
 import asyncio
 from logging.config import fileConfig
@@ -38,18 +20,15 @@ from database.db import engine as async_engine  # AsyncEngine приложени
 from database.models import Base                # declarative_base()
 from database.models import User, Group, GoogleSheet  # Импорт всех моделей
 # ======================================================================
-
-
-# Получаем URL из alembic.ini
+# Получаем URL из конфига
 config = context.config
 alembic_config = config.get_section(config.config_ini_section)
-original_url = alembic_config.get("sqlalchemy.url")
+original_url = alembic_config.get("sqlalchemy.url")  # Исправлено!
 
 # Конвертируем async-URL в sync-URL
 SYNC_DATABASE_URL = str(
     make_url(original_url).set(drivername="sqlite")
 )
-
 
 # ----------------------------------------------------------------------
 # OFF-line режим — Alembic формирует SQL-файл без подключения к БД
