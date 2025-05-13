@@ -1,3 +1,5 @@
+# google_sheets.py
+
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -51,7 +53,7 @@ async def sheets_menu(message: Message, state: FSMContext):
             active_sheets = await session.scalars(
                 select(GoogleSheet).filter(
                     GoogleSheet.chat_id == channel.chat_id,
-                    GoogleSheet.is_active == 1
+                    GoogleSheet.is_active == True
                 )
             )
             active_sheets_list = active_sheets.all()
@@ -116,7 +118,7 @@ async def delete_sheet_callback(call: CallbackQuery):
                     return
             
             # Помечаем таблицу как неактивную (мягкое удаление)
-            sheet.is_active = 0
+            sheet.is_active = False
             await session.commit()
             
             # Отправляем сообщение об успешном удалении
@@ -126,7 +128,7 @@ async def delete_sheet_callback(call: CallbackQuery):
             active_sheets_count_q = select(func.count()).select_from(GoogleSheet).where(
                 and_(
                     GoogleSheet.chat_id == chat_id,
-                    GoogleSheet.is_active == 1
+                    GoogleSheet.is_active == True
                 )
             )
             active_sheets_count_result = await session.execute(active_sheets_count_q)
@@ -200,7 +202,7 @@ async def sync_sheets_now_callback(call: CallbackQuery):
             channel_id = user.current_chat_id
             
             # Получаем информацию о подключенных таблицах для этого канала
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == 1)
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == True)
             sheets_result = await session.execute(sheets_q)
             sheets = sheets_result.scalars().all()
             
@@ -342,7 +344,7 @@ async def sync_sheet_command(message: Message):
             channel_id = user.current_chat_id
             
             # Получаем информацию о подключенных таблицах для этого канала
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == 1)
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.chat_id == channel_id, GoogleSheet.is_active == True)
             sheets_result = await session.execute(sheets_q)
             sheets = sheets_result.scalars().all()
             
@@ -485,7 +487,7 @@ async def process_sync_interval(message: Message, state: FSMContext):
             await session.execute(
                 update(GoogleSheet)
                 .where(GoogleSheet.chat_id == channel_id)
-                .values(is_active=0)
+                .values(is_active=False)
             )
             
             # Создаем новую запись таблицы
@@ -495,7 +497,7 @@ async def process_sync_interval(message: Message, state: FSMContext):
                 sheet_name=sheet_name,
                 sync_interval=interval,
                 created_by=message.from_user.id,
-                is_active=1  # Явно указываем, что таблица активна
+                is_active=True  # Явно указываем, что таблица активна
             )
             
             session.add(new_sheet)
@@ -588,7 +590,7 @@ async def remove_sheet(message: Message):
             sheet_to_remove = sheets[sheet_number - 1]
             
             # Помечаем таблицу как неактивную (мягкое удаление)
-            sheet_to_remove.is_active = 0
+            sheet_to_remove.is_active = False
             await session.commit()
             
             await message.answer(
@@ -688,7 +690,7 @@ async def fix_sheets_confirm(call: CallbackQuery):
     try:
         async with AsyncSessionLocal() as session:
             # Получаем все активные записи таблиц
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == 1)
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == True)
             sheets_result = await session.execute(sheets_q)
             active_sheets = sheets_result.scalars().all()
             
@@ -696,7 +698,7 @@ async def fix_sheets_confirm(call: CallbackQuery):
             
             # Помечаем все таблицы как неактивные
             for sheet in active_sheets:
-                sheet.is_active = 0
+                sheet.is_active = False
             
             await session.commit()
             
