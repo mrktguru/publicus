@@ -58,9 +58,13 @@ async def sheets_menu(message: Message, state: FSMContext):
             )
             active_sheets_list = active_sheets.all()
             
-            # Логирование для отладки
-            logger.info(f"Активные таблицы: {active_sheets_list}")
-            logger.info(f"is_active значений: {[s.is_active for s in active_sheets_list]}")
+            # Диагностическое логирование
+            logger.info(f"Active sheets list length: {len(active_sheets_list)}")
+            logger.info(f"Active sheets list: {[{'id': s.id, 'chat_id': s.chat_id, 'is_active': s.is_active, 'active_type': type(s.is_active)} for s in active_sheets_list]}")
+            logger.info(f"Any active check: {any(s.is_active == 1 for s in active_sheets_list)}")
+            logger.info(f"Any active check (==True): {any(s.is_active == True for s in active_sheets_list)}")
+            logger.info(f"Any active check (is True): {any(s.is_active is True for s in active_sheets_list)}")
+
 
             # Формируем клавиатуру
             inline_keyboard = [
@@ -68,7 +72,7 @@ async def sheets_menu(message: Message, state: FSMContext):
             ]
             
             # Добавляем кнопки только если есть активные таблицы
-            if active_sheets_list and any(s.is_active == 1 for s in active_sheets_list):
+            if active_sheets_list and len([s for s in active_sheets_list if s.is_active == 1 or s.is_active is True]) > 0:
                 sheet_id = active_sheets_list[0].id
                 inline_keyboard.append([InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="sync_sheets_now")])
                 inline_keyboard.append([InlineKeyboardButton(text="🗑 Удалить таблицу", callback_data=f"delete_sheet:{sheet_id}")])
