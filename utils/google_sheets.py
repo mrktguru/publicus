@@ -281,14 +281,18 @@ class GoogleSheetsClient:
             
             # 8. Если предоставлены данные о канале, предзаполняем значения столбца Канал/Группа
             if chat_id and chat_title and content_plan_sheet_id is not None:
+                # Преобразуем ID канала в правильный формат
+                channel_id_str = str(chat_id)
                 # Предзаполняем значение только для первой строки
-                channel_values = [[f"{chat_title} ({chat_id})"]]
+                channel_values = [[channel_id_str]]  # Используем полный ID с минусом
                 self.service.spreadsheets().values().update(
                     spreadsheetId=spreadsheet_id,
-                    range="'Контент-план'!B2:B2",  # Только вторая строка (первая строка - заголовок)
+                    range="'Контент-план'!B2:B2",
                     valueInputOption='RAW',
                     body={'values': channel_values}
                 ).execute()
+
+                
                 
                 # Защита столбца с данными канала
                 requests.append({
