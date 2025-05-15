@@ -7,6 +7,9 @@ import logging
 from zoneinfo import ZoneInfo
 import asyncio
 
+import re
+import traceback
+
 from database.db import AsyncSessionLocal
 from database.models import Post, Group, GoogleSheet
 from utils.google_sheets import GoogleSheetsClient
@@ -418,7 +421,30 @@ async def check_google_sheets(bot: Bot):
         log.error(f"Traceback: {traceback.format_exc()}")
 
 
+async def process_sheet(sheets_client, sheet, bot):
+    """Обрабатывает отдельную таблицу с тайм-аутом."""
+    # Обновляем время последней синхронизации
+    sheet.last_sync = datetime.now(timezone.utc)
+    
+    # Получаем запланированные посты с безопасной обработкой
+    try:
+        log.info(f"Getting posts from sheet {sheet.spreadsheet_id}")
+        upcoming_posts = sheets_client.get_upcoming_posts(
+            sheet.spreadsheet_id, 
+            sheet.sheet_name
+        )
         
+        log.info(f"Found {len(upcoming_posts)} upcoming posts in sheet {sheet.spreadsheet_id}")
+        
+        # Обрабатываем каждый пост
+        for post in upcoming_posts:
+            try:
+                # Все остальные операции с ограничением времени
+                await process_post(sheets_client, sheet, post, bot)
+            except Exception as post_error:
+                log.error(f"Error processing post: {post_error}")
+    except Exception as fetch_error:
+        log.error(f"Error fetching posts from sheet {sheet.spreadsheet_id}: {fetch_error}")        
 
 
 async def publish_exact_post(bot: Bot, post_id: int):
