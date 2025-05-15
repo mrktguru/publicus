@@ -421,13 +421,6 @@ class GoogleSheetsClient:
     def get_upcoming_posts(self, spreadsheet_id, sheet_name="Контент-план"):
         """
         Получение постов, запланированных к публикации в ближайшее время.
-        
-        Args:
-            spreadsheet_id: ID Google Таблицы
-            sheet_name: Имя листа (по умолчанию "Контент-план")
-            
-        Returns:
-            list: Список словарей с данными о постах
         """
         logger.info(f"Looking for upcoming posts in sheet {spreadsheet_id}, sheet {sheet_name}")
         
@@ -438,30 +431,65 @@ class GoogleSheetsClient:
             data = self.get_sheet_data(spreadsheet_id, range_name)
             logger.info(f"Found {len(data)} rows in content plan")
             
+            if not data:
+                logger.warning(f"No data found in sheet {spreadsheet_id}, sheet {sheet_name}")
+                return []
+            
             upcoming_posts = []
             now = datetime.now()
             check_interval = now + timedelta(minutes=30)  # Проверяем посты на ближайшие 30 минут
             
+            # Отладочная информация
+            logger.info(f"Checking posts between {now} and {check_interval}")
+            
             # Обработка полученных данных
-            for row_index, row in enumerate(data, start=2):  # Начинаем с индекса 2, т.к. первая строка - заголовки
+            for row_index, row in enumerate(data, start=2):
                 # Проверяем, что у нас достаточно данных в строке
-                if len(row) < 8:
-                    logger.warning(f"Row {row_index} has insufficient data: {row}")
-                    continue
-                    
                 try:
+                    if len(row) < 8:
+                        logger.warning(f"Row {row_index} has insufficient data: {row}")
+                        continue
+                    
+                    # Отладочная информация о строке
+                    logger.info(f"Processing row {row_index}: {row}")
+                        
                     # Извлекаем данные из строки
-                    post_id = row[0]
-                    channel = row[1]
-                    date_str = row[2]
-                    time_str = row[3]
+                    post_id = row[0] if len(row) > 0 else ""
+                    channel = row[1] if len(row) > 1 else ""
+                    date_str = row[2] if len(row) > 2 else ""
+                    time_str = row[3] if len(row) > 3 else ""
                     status = row[7] if len(row) > 7 else ""
+                    
+                    # Проверяем наличие необходимых данных
+                    if not post_id or not channel or not date_str or not time_str:
+                        logger.warning(f"Missing required data in row {row_index}")
+                        continue
+                    
+                    # Отладочная информация
+                    logger.info(f"Row {row_index} - ID: {post_id}, Channel: {channel}, Date: {date_str}, Time: {time_str}, Status: {status}")
                     
                     # Проверяем статус
                     if status.lower() != "ожидает":
-                        logger.debug(f"Skipping row {row_index}, status is not 'ожидает': {status}")
+                        logger.info(f"Skipping row {row_index}, status is not 'ожидает': {status}")
                         continue
                         
+                    # Обработка ID канала (разные форматы)
+                    clean_channel_id = channel
+                    try:
+                        # Если канал содержит скобки, извлекаем ID
+                        if '(' in channel and ')' in channel:
+                            import re
+                            match = re.search(r'\(([^)]+)\)', channel)
+                            if match:
+                                extracted_id = match.group(1)
+                                # Убираем минус, если он есть
+                                clean_channel_id = extracted_id.replace('-', '')
+                                if clean_channel_id.startswith('100'):
+                                    clean_channel_id = '-' + clean_channel_id
+                                logger.info(f"Extracted channel ID from '{channel}': {clean_channel_id}")
+                    except Exception as e:
+                        logger.error(f"Error extracting channel ID: {e}")
+                    
                     # Парсим дату и время
                     try:
                         date_parts = date_str.split('.')
@@ -480,15 +508,16 @@ class GoogleSheetsClient:
                         
                         # Формируем дату и время публикации
                         publish_datetime = datetime(year, month, day, hour, minute)
+                        logger.info(f"Parsed datetime: {publish_datetime}")
                     except Exception as e:
-                        logger.warning(f"Error parsing datetime in row {row_index}: {e}")
+                        logger.error(f"Error parsing datetime in row {row_index}: {e}")
                         continue
                     
                     # Проверяем, находится ли время публикации в интервале проверки
                     if now <= publish_datetime <= check_interval:
                         post_data = {
                             'id': post_id,
-                            'channel': channel,
+                            'channel': clean_channel_id,
                             'publish_datetime': publish_datetime,
                             'title': row[4] if len(row) > 4 else "",
                             'text': row[5] if len(row) > 5 else "",
@@ -497,16 +526,19 @@ class GoogleSheetsClient:
                         }
                         upcoming_posts.append(post_data)
                         logger.info(f"Found upcoming post at {publish_datetime}: {post_id}")
-                except Exception as e:
-                    logger.error(f"Error processing row {row_index}: {e}")
+                    else:
+                        logger.info(f"Post {post_id} scheduled at {publish_datetime} is outside check interval")
+                except Exception as row_error:
+                    logger.error(f"Error processing row {row_index}: {row_error}")
                     continue
-                    
-            return upcoming_posts
-        
+                        
+                return upcoming_posts
+            
         except Exception as e:
             logger.error(f"Error getting upcoming posts: {e}")
             return []
 
+    
     def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
         """
         Обновляет значение конкретной ячейки в таблице.
