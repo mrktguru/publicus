@@ -82,3 +82,4 @@ def prepare_media_urls(media_text):
             valid_urls.append(url)
     
     return valid_urls
+
