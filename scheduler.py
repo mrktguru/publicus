@@ -16,6 +16,38 @@ log = logging.getLogger(__name__)
 # Сохраняем глобальный объект планировщика для доступа из разных функций
 _scheduler = None
 
+
+# Добавить в начало файла scheduler.py
+import aiohttp
+from io import BytesIO
+from utils.text_formatter import format_google_sheet_text, prepare_media_urls
+
+async def download_image(url: str):
+    """
+    Загружает изображение по URL.
+    
+    Args:
+        url: URL изображения
+        
+    Returns:
+        BytesIO: Объект с содержимым изображения или None в случае ошибки
+    """
+    log.info(f"Downloading image from URL: {url}")
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, timeout=20) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    log.info(f"Successfully downloaded image, size: {len(content)} bytes")
+                    return BytesIO(content)
+                else:
+                    log.error(f"Failed to download image, HTTP status: {response.status}")
+                    return None
+        except Exception as e:
+            log.error(f"Error downloading image: {e}")
+            return None
+
+
 # начало загрузки изображений из URL
 import aiohttp
 from io import BytesIO
@@ -177,6 +209,8 @@ async def check_scheduled_posts(bot: Bot):
     except Exception as e:
         log.error(f"Error checking scheduled posts: {e}")
 
+
+# Заменить существующую функцию check_google_sheets в scheduler.py
 
 # Заменить существующую функцию check_google_sheets в scheduler.py
 
