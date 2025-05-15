@@ -337,6 +337,7 @@ class GoogleSheetsClient:
             return False
 
     
+    
     def _get_sheet_id_by_name(self, metadata, sheet_name):
         """
         Получает ID листа по его названию из метаданных таблицы.
@@ -353,6 +354,7 @@ class GoogleSheetsClient:
                 return sheet['properties']['sheetId']
         return None
 
+    
     
     def update_post_status(self, spreadsheet_id, sheet_name, row_index, status):
         """
