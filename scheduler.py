@@ -224,145 +224,187 @@ async def check_google_sheets(bot: Bot):
         
         async with AsyncSessionLocal() as session:
             # Получаем все активные подключения таблиц
-            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == 1)  # Используйте 1 вместо True
+            sheets_q = select(GoogleSheet).filter(GoogleSheet.is_active == 1)  # Используем 1 вместо True
             sheets_result = await session.execute(sheets_q)
             active_sheets = sheets_result.scalars().all()
             
             log.info(f"Found {len(active_sheets)} active Google Sheets connections")
             
+            if not active_sheets:
+                log.info("No active Google Sheets connections found")
+                return
+            
+            # Обрабатываем каждую таблицу
             for sheet in active_sheets:
                 try:
                     # Обновляем время последней синхронизации
                     sheet.last_sync = datetime.now(timezone.utc)
                     
                     # Получаем запланированные посты
-                    upcoming_posts = sheets_client.get_upcoming_posts(
-                        sheet.spreadsheet_id, 
-                        sheet.sheet_name
-                    )
+                    log.info(f"Getting upcoming posts from sheet {sheet.spreadsheet_id}, sheet name: {sheet.sheet_name}")
                     
-                    log.info(f"Found {len(upcoming_posts)} upcoming posts in sheet {sheet.spreadsheet_id}")
-                    
-                    # Обрабатываем каждый пост
-                    for post in upcoming_posts:
-                        # Форматируем текст
-                        formatted_text = format_google_sheet_text(post['text'])
+                    try:
+                        upcoming_posts = sheets_client.get_upcoming_posts(
+                            sheet.spreadsheet_id, 
+                            sheet.sheet_name
+                        )
                         
-                        # Публикуем пост
-                        try:
-                            # Получаем channel_id из Telegram или из таблицы
-                            channel_id = post['channel']
-                            if not str(channel_id).startswith('-100'):
-                                # Это не числовой ID канала, а возможно его название
-                                # Пытаемся найти этот канал в базе данных
-                                channel_q = select(Group).filter(Group.title == channel_id)
-                                channel_result = await session.execute(channel_q)
-                                channel = channel_result.scalar_one_or_none()
-                                
-                                if channel:
-                                    channel_id = channel.chat_id
+                        log.info(f"Found {len(upcoming_posts)} upcoming posts in sheet {sheet.spreadsheet_id}")
+                        
+                        # Обрабатываем каждый пост
+                        for post in upcoming_posts:
+                            # Форматируем текст
+                            formatted_text = format_google_sheet_text(post['text'])
                             
-                            # Проверяем наличие медиа
-                            if post.get('media'):
-                                # Подготавливаем URL медиа
-                                media_urls = prepare_media_urls(post['media'])
-                                log.info(f"Prepared media URLs: {media_urls}")
+                            # Публикуем пост
+                            try:
+                                # Получаем channel_id из Telegram или из таблицы
+                                channel_id = post['channel']
+                                log.info(f"Post channel ID: {channel_id}")
                                 
-                                if media_urls:
-                                    # Проверяем, является ли медиа URL или file_id
-                                    media_url = media_urls[0]
+                                # Если канал указан не в формате числового ID
+                                if isinstance(channel_id, str):
+                                    # Если в ID есть скобки, извлекаем ID из них
+                                    if '(' in channel_id and ')' in channel_id:
+                                        import re
+                                        match = re.search(r'\(([^)]+)\)', channel_id)
+                                        if match:
+                                            channel_id = match.group(1)
+                                            log.info(f"Extracted channel ID from brackets: {channel_id}")
+                                
+                                # Проверяем, является ли ID правильным числовым форматом
+                                if isinstance(channel_id, str) and not channel_id.startswith('-100'):
+                                    # Это не числовой ID канала, а возможно его название
+                                    # Пытаемся найти этот канал в базе данных
+                                    channel_q = select(Group).filter(Group.title == channel_id)
+                                    channel_result = await session.execute(channel_q)
+                                    channel = channel_result.scalar_one_or_none()
                                     
-                                    if media_url.startswith(('http://', 'https://')):
-                                        # Это URL, пробуем загрузить изображение
-                                        image_data = await download_image(media_url)
+                                    if channel:
+                                        channel_id = channel.chat_id
+                                        log.info(f"Found channel in database: {channel_id}")
+                                
+                                log.info(f"Final channel ID for post: {channel_id}")
+                                
+                                # Проверяем наличие медиа
+                                if post.get('media'):
+                                    # Подготавливаем URL медиа
+                                    media_urls = prepare_media_urls(post['media'])
+                                    log.info(f"Prepared media URLs: {media_urls}")
+                                    
+                                    if media_urls:
+                                        # Проверяем, является ли медиа URL или file_id
+                                        media_url = media_urls[0]
                                         
-                                        if image_data:
-                                            # Отправляем фото
-                                            await bot.send_photo(
-                                                chat_id=channel_id,
-                                                photo=image_data,
-                                                caption=formatted_text,
-                                                parse_mode="HTML"
-                                            )
-                                            log.info(f"Sent photo from URL for post {post['id']} to channel {channel_id}")
+                                        if media_url.startswith(('http://', 'https://')):
+                                            # Это URL, пробуем загрузить изображение с таймаутом
+                                            try:
+                                                image_data = await asyncio.wait_for(
+                                                    download_image(media_url), 
+                                                    timeout=30
+                                                )
+                                                
+                                                if image_data:
+                                                    # Отправляем фото
+                                                    await bot.send_photo(
+                                                        chat_id=channel_id,
+                                                        photo=image_data,
+                                                        caption=formatted_text,
+                                                        parse_mode="HTML"
+                                                    )
+                                                    log.info(f"Sent photo from URL for post {post['id']} to channel {channel_id}")
+                                                else:
+                                                    # Если не удалось скачать изображение, отправляем только текст
+                                                    await bot.send_message(
+                                                        chat_id=channel_id,
+                                                        text=formatted_text + "\n\n[Не удалось загрузить изображение]",
+                                                        parse_mode="HTML"
+                                                    )
+                                                    log.warning(f"Failed to download image from URL, sent text only for post {post['id']}")
+                                            except asyncio.TimeoutError:
+                                                log.error(f"Timeout downloading image from {media_url}")
+                                                await bot.send_message(
+                                                    chat_id=channel_id,
+                                                    text=formatted_text + "\n\n[Таймаут загрузки изображения]",
+                                                    parse_mode="HTML"
+                                                )
                                         else:
-                                            # Если не удалось скачать изображение, отправляем только текст
-                                            await bot.send_message(
-                                                chat_id=channel_id,
-                                                text=formatted_text + "\n\n[Не удалось загрузить изображение]",
-                                                parse_mode="HTML"
-                                            )
-                                            log.warning(f"Failed to download image from URL, sent text only for post {post['id']}")
+                                            # Вероятно, это file_id - пробуем отправить как есть
+                                            try:
+                                                await bot.send_photo(
+                                                    chat_id=channel_id,
+                                                    photo=media_url,
+                                                    caption=formatted_text,
+                                                    parse_mode="HTML"
+                                                )
+                                                log.info(f"Sent photo with file_id for post {post['id']} to channel {channel_id}")
+                                            except Exception as media_err:
+                                                log.error(f"Error sending photo with file_id: {media_err}")
+                                                # Отправляем сообщение без медиа
+                                                await bot.send_message(
+                                                    chat_id=channel_id,
+                                                    text=formatted_text,
+                                                    parse_mode="HTML"
+                                                )
+                                                log.info(f"Sent text only message for post {post['id']} to channel {channel_id}")
                                     else:
-                                        # Вероятно, это file_id - пробуем отправить как есть
-                                        try:
-                                            await bot.send_photo(
-                                                chat_id=channel_id,
-                                                photo=media_url,
-                                                caption=formatted_text,
-                                                parse_mode="HTML"
-                                            )
-                                            log.info(f"Sent photo with file_id for post {post['id']} to channel {channel_id}")
-                                        except Exception as media_err:
-                                            log.error(f"Error sending photo with file_id: {media_err}")
-                                            # Отправляем сообщение без медиа
-                                            await bot.send_message(
-                                                chat_id=channel_id,
-                                                text=formatted_text,
-                                                parse_mode="HTML"
-                                            )
-                                            log.info(f"Sent text only message for post {post['id']} to channel {channel_id}")
+                                        # Отправляем сообщение без медиа, так как нет корректных URL
+                                        await bot.send_message(
+                                            chat_id=channel_id,
+                                            text=formatted_text,
+                                            parse_mode="HTML"
+                                        )
+                                        log.info(f"Sent text only message (no valid media URLs) for post {post['id']} to channel {channel_id}")
                                 else:
-                                    # Отправляем сообщение без медиа, так как нет корректных URL
+                                    # Отправляем сообщение без медиа
                                     await bot.send_message(
                                         chat_id=channel_id,
                                         text=formatted_text,
                                         parse_mode="HTML"
                                     )
-                                    log.info(f"Sent text only message (no valid media URLs) for post {post['id']} to channel {channel_id}")
-                            else:
-                                # Отправляем сообщение без медиа
-                                await bot.send_message(
-                                    chat_id=channel_id,
-                                    text=formatted_text,
-                                    parse_mode="HTML"
+                                    log.info(f"Sent text only message (no media) for post {post['id']} to channel {channel_id}")
+                                
+                                # Обновляем статус в таблице
+                                sheets_client.update_post_status(
+                                    sheet.spreadsheet_id,
+                                    sheet.sheet_name,
+                                    post['row_index'],
+                                    "Опубликован"
                                 )
-                                log.info(f"Sent text only message (no media) for post {post['id']} to channel {channel_id}")
-                            
-                            # Обновляем статус в таблице
-                            sheets_client.update_post_status(
-                                sheet.spreadsheet_id,
-                                sheet.sheet_name,
-                                post['row_index'],
-                                "Опубликован"
-                            )
-                            
-                            # Добавляем информацию в историю
-                            sheets_client.add_to_history(
-                                sheet.spreadsheet_id,
-                                post,
-                                "Успешно"
-                            )
-                            
-                            log.info(f"Successfully published post {post['id']} from Google Sheets")
-                            
-                        except Exception as e:
-                            log.error(f"Error publishing post from Google Sheets: {e}")
-                            
-                            # Обновляем статус в таблице
-                            sheets_client.update_post_status(
-                                sheet.spreadsheet_id,
-                                sheet.sheet_name,
-                                post['row_index'],
-                                "Ошибка"
-                            )
-                            
-                            # Добавляем информацию в историю
-                            sheets_client.add_to_history(
-                                sheet.spreadsheet_id,
-                                post,
-                                f"Ошибка: {str(e)}"
-                            )
+                                
+                                # Добавляем информацию в историю
+                                sheets_client.add_to_history(
+                                    sheet.spreadsheet_id,
+                                    post,
+                                    "Успешно"
+                                )
+                                
+                                log.info(f"Successfully published post {post['id']} from Google Sheets")
+                                
+                            except Exception as e:
+                                log.error(f"Error publishing post from Google Sheets: {e}")
+                                
+                                # Обновляем статус в таблице только если post и row_index доступны
+                                if post.get('row_index'):
+                                    try:
+                                        sheets_client.update_post_status(
+                                            sheet.spreadsheet_id,
+                                            sheet.sheet_name,
+                                            post['row_index'],
+                                            "Ошибка"
+                                        )
+                                        
+                                        # Добавляем информацию в историю
+                                        sheets_client.add_to_history(
+                                            sheet.spreadsheet_id,
+                                            post,
+                                            f"Ошибка: {str(e)}"
+                                        )
+                                    except Exception as update_err:
+                                        log.error(f"Error updating post status after failure: {update_err}")
+                    
+                    except Exception as posts_err:
+                        log.error(f"Error getting upcoming posts: {posts_err}")
                     
                 except Exception as sheet_error:
                     log.error(f"Error processing sheet {sheet.spreadsheet_id}: {sheet_error}")
@@ -372,6 +414,9 @@ async def check_google_sheets(bot: Bot):
             
     except Exception as e:
         log.error(f"Error checking Google Sheets: {e}")
+        import traceback
+        log.error(f"Traceback: {traceback.format_exc()}")
+
 
         
 
