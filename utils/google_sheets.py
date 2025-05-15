@@ -382,7 +382,7 @@ class GoogleSheetsClient:
 
 
 
-        def get_upcoming_posts(self, spreadsheet_id, sheet_name="Контент-план"):
+    def get_upcoming_posts(self, spreadsheet_id, sheet_name="Контент-план"):
             """
             Получение постов, запланированных к публикации в ближайшее время.
             
@@ -467,11 +467,11 @@ class GoogleSheetsClient:
                         
                 return upcoming_posts
             
-            except Exception as e:
+       except Exception as e:
                 logger.error(f"Error getting upcoming posts: {e}")
                 return []
         
-        def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
+    def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
             """
             Обновляет значение конкретной ячейки в таблице.
             
