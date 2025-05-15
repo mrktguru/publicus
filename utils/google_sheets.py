@@ -127,7 +127,7 @@ class GoogleSheetsClient:
             logger.error(f"Error updating cell in sheet {spreadsheet_id}, range {range_name}: {e}")
             raise
     
-    def create_sheet_structure(self, spreadsheet_id, chat_id=None, chat_title=None):
+def create_sheet_structure(self, spreadsheet_id, chat_id=None, chat_title=None):
     """
     Создает необходимую структуру в таблице: листы и заголовки столбцов.
     
@@ -135,7 +135,7 @@ class GoogleSheetsClient:
         spreadsheet_id: ID Google Таблицы
         chat_id: ID канала/группы
         chat_title: Название канала/группы
-            
+        
     Returns:
         bool: Успешно ли создана структура
     """
@@ -153,8 +153,27 @@ class GoogleSheetsClient:
         
         # 2. Создаем недостающие листы
         if sheets_to_create:
-            # Код создания листов остается без изменений...
+            requests = []
+            for sheet_title in sheets_to_create:
+                requests.append({
+                    'addSheet': {
+                        'properties': {
+                            'title': sheet_title
+                        }
+                    }
+                })
             
+            # Отправляем запрос на создание листов
+            result = self.service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={'requests': requests}
+            ).execute()
+            
+            logger.info(f"Created sheets: {sheets_to_create}")
+            
+            # Получаем обновленные метаданные после создания листов
+            metadata = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        
         # 3. Добавляем заголовки в Контент-план
         content_plan_headers = [
             ['ID', 'Канал/Группа', 'Дата публикации', 'Время публикации', 
@@ -167,39 +186,103 @@ class GoogleSheetsClient:
             body={'values': content_plan_headers}
         ).execute()
         
-        # 4. Формируем список значений для выпадающего списка статусов
-        status_values = ['Ожидает', 'Опубликован', 'Отложен', 'Отменен']
+        # 4. Добавляем заголовки в Историю
+        history_headers = [
+            ['ID', 'Канал/Группа', 'Дата публикации', 'Время публикации', 
+            'Текст', 'Результат', 'Комментарии']
+        ]
+        self.service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range="'История'!A1:G1",
+            valueInputOption='RAW',
+            body={'values': history_headers}
+        ).execute()
         
-        # Найдем ID листа Контент-план
+        # 5. Получаем ID листа Контент-план
         content_plan_sheet_id = self._get_sheet_id_by_name(metadata, 'Контент-план')
+        history_sheet_id = self._get_sheet_id_by_name(metadata, 'История')
         
-        # Добавляем проверку данных для статуса (столбец H, начиная со 2-й строки)
-        status_validation_request = {
-            'setDataValidation': {
-                'range': {
-                    'sheetId': content_plan_sheet_id,
-                    'startRowIndex': 1,  # Начинаем со второй строки
-                    'endRowIndex': 1000,  # Примерная верхняя граница
-                    'startColumnIndex': 7,  # Столбец H (0-based index)
-                    'endColumnIndex': 8,    # Столбец H
-                },
-                'rule': {
-                    'condition': {
-                        'type': 'ONE_OF_LIST',
-                        'values': [{'userEnteredValue': status} for status in status_values],
+        # 6. Формируем список запросов для форматирования
+        requests = []
+        
+        # 7. Добавляем выпадающий список для статуса
+        if content_plan_sheet_id is not None:
+            # Выпадающий список для статуса
+            status_values = ['Ожидает', 'Опубликован', 'Отложен', 'Отменен']
+            
+            requests.append({
+                'setDataValidation': {
+                    'range': {
+                        'sheetId': content_plan_sheet_id,
+                        'startRowIndex': 1,     # Со второй строки
+                        'endRowIndex': 1000,    # До 1000-й строки
+                        'startColumnIndex': 7,  # Столбец H (индексация с 0)
+                        'endColumnIndex': 8     # До столбца H
                     },
-                    'strict': True,
-                    'showCustomUi': True
+                    'rule': {
+                        'condition': {
+                            'type': 'ONE_OF_LIST',
+                            'values': [{'userEnteredValue': status} for status in status_values]
+                        },
+                        'strict': True,
+                        'showCustomUi': True
+                    }
                 }
-            }
-        }
+            })
+            
+            # Добавляем форматирование заголовков
+            requests.append({
+                'repeatCell': {
+                    'range': {
+                        'sheetId': content_plan_sheet_id,
+                        'startRowIndex': 0,
+                        'endRowIndex': 1
+                    },
+                    'cell': {
+                        'userEnteredFormat': {
+                            'textFormat': {
+                                'bold': True
+                            },
+                            'backgroundColor': {
+                                'red': 0.9,
+                                'green': 0.9,
+                                'blue': 0.9
+                            }
+                        }
+                    },
+                    'fields': 'userEnteredFormat(textFormat,backgroundColor)'
+                }
+            })
         
-        # Остальной код форматирования...
+        if history_sheet_id is not None:
+            # Форматирование для листа История
+            requests.append({
+                'repeatCell': {
+                    'range': {
+                        'sheetId': history_sheet_id,
+                        'startRowIndex': 0,
+                        'endRowIndex': 1
+                    },
+                    'cell': {
+                        'userEnteredFormat': {
+                            'textFormat': {
+                                'bold': True
+                            },
+                            'backgroundColor': {
+                                'red': 0.9,
+                                'green': 0.9,
+                                'blue': 0.9
+                            }
+                        }
+                    },
+                    'fields': 'userEnteredFormat(textFormat,backgroundColor)'
+                }
+            })
         
-        # 5. Если канал/группа указаны, предзаполняем столбец B
-        if chat_id and chat_title:
-            # Предварительно заполняем столбец B (Канал/Группа) для 50 строк
-            channel_values = [[f"{chat_title} ({chat_id})"]] * 50
+        # 8. Если предоставлены данные о канале, предзаполняем значения столбца Канал/Группа
+        if chat_id and chat_title and content_plan_sheet_id is not None:
+            # Предзаполняем значения для 50 строк
+            channel_values = [[f"{chat_title} ({chat_id})"] for _ in range(50)]
             self.service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range="'Контент-план'!B2:B51",
@@ -207,34 +290,39 @@ class GoogleSheetsClient:
                 body={'values': channel_values}
             ).execute()
             
-            # Делаем столбец B неизменяемым
-            channel_protection_request = {
+            # Защита столбца с данными канала
+            requests.append({
                 'addProtectedRange': {
                     'protectedRange': {
                         'range': {
                             'sheetId': content_plan_sheet_id,
-                            'startRowIndex': 1,
-                            'endRowIndex': 1000,
-                            'startColumnIndex': 1,  # Столбец B (0-based)
-                            'endColumnIndex': 2,
+                            'startRowIndex': 1,     # Со второй строки
+                            'endRowIndex': 1000,    # До 1000-й строки
+                            'startColumnIndex': 1,  # Столбец B (индексация с 0)
+                            'endColumnIndex': 2     # До столбца B
                         },
                         'description': 'Защита значения канала/группы',
-                        'warningOnly': True  # Предупреждение при попытке изменения
+                        'warningOnly': True  # Только предупреждение при попытке изменения
                     }
                 }
-            }
+            })
         
-        # Применяем все запросы форматирования в одном batch
-        requests = [... ]  # Добавляем существующие запросы форматирования
+        # 9. Автоматическая ширина столбцов
+        for sheet_name in required_sheets:
+            sheet_id = self._get_sheet_id_by_name(metadata, sheet_name)
+            if sheet_id is not None:
+                requests.append({
+                    'autoResizeDimensions': {
+                        'dimensions': {
+                            'sheetId': sheet_id,
+                            'dimension': 'COLUMNS',
+                            'startIndex': 0,
+                            'endIndex': 9  # Количество столбцов
+                        }
+                    }
+                })
         
-        # Добавляем запрос для выпадающего списка статусов
-        requests.append(status_validation_request)
-        
-        # Если канал указан, добавляем запрос защиты
-        if chat_id and chat_title:
-            requests.append(channel_protection_request)
-            
-        # Применяем форматирование, если есть запросы
+        # 10. Применяем все запросы форматирования
         if requests:
             self.service.spreadsheets().batchUpdate(
                 spreadsheetId=spreadsheet_id,
@@ -243,47 +331,11 @@ class GoogleSheetsClient:
         
         logger.info("Sheet structure created successfully")
         return True
-            
+        
     except Exception as e:
         logger.error(f"Error creating sheet structure: {e}")
         return False
 
-    
-    def _get_sheet_id_by_name(self, metadata, sheet_name):
-        """Получает ID листа по его названию"""
-        for sheet in metadata.get('sheets', []):
-            if sheet['properties']['title'] == sheet_name:
-                return sheet['properties']['sheetId']
-        return None
-        
-    def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
-        """
-        Обновляет значение конкретной ячейки в таблице.
-        
-        Args:
-            spreadsheet_id: ID Google Таблицы
-            sheet_name: Имя листа
-            row: Номер строки (начиная с 1)
-            col: Буква столбца (A, B, C, ...)
-            value: Новое значение
-        """
-        try:
-            range_name = f"'{sheet_name}'!{col}{row}"
-            body = {
-                'values': [[value]]
-            }
-            
-            result = self.service.spreadsheets().values().update(
-                spreadsheetId=spreadsheet_id,
-                range=range_name,
-                valueInputOption='RAW',
-                body=body
-            ).execute()
-            
-            return result
-        except Exception as e:
-            logger.error(f"Error updating cell {col}{row} in sheet {sheet_name}: {e}")
-            raise
 
 
 
