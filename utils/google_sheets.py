@@ -336,8 +336,22 @@ class GoogleSheetsClient:
             logger.error(f"Error creating sheet structure: {e}")
             return False
 
-
-
+    
+    def _get_sheet_id_by_name(self, metadata, sheet_name):
+        """
+        Получает ID листа по его названию из метаданных таблицы.
+        
+        Args:
+            metadata: Метаданные таблицы, полученные через API
+            sheet_name: Название листа
+            
+        Returns:
+            int: ID листа или None, если лист не найден
+        """
+        for sheet in metadata.get('sheets', []):
+            if sheet['properties']['title'] == sheet_name:
+                return sheet['properties']['sheetId']
+        return None
 
     
     def update_post_status(self, spreadsheet_id, sheet_name, row_index, status):
