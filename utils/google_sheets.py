@@ -499,33 +499,3 @@ def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
     except Exception as e:
         logger.error(f"Error updating cell {col}{row} in sheet {sheet_name}: {e}")
         raise
-
-
-def update_cell_value(self, spreadsheet_id, sheet_name, row, col, value):
-    """
-    Обновляет значение конкретной ячейки в таблице.
-    
-    Args:
-        spreadsheet_id: ID Google Таблицы
-        sheet_name: Имя листа
-        row: Номер строки (начиная с 1)
-        col: Буква столбца (A, B, C, ...)
-        value: Новое значение
-    """
-    try:
-        range_name = f"'{sheet_name}'!{col}{row}"
-        body = {
-            'values': [[value]]
-        }
-        
-        result = self.service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-            valueInputOption='RAW',
-            body=body
-        ).execute()
-        
-        return result
-    except Exception as e:
-        logger.error(f"Error updating cell {col}{row} in sheet {sheet_name}: {e}")
-        raise
